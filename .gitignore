@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Local scratch databases (the curated evidence DB IS committed on purpose)
+*.db
+!evidence/kinea.db
+!evidence/revision_demo.db
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

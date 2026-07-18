@@ -1,0 +1,15 @@
+LIVE ECB VALIDATION
+===================
+Status: PASS
+First collection: mode=live; series=5; seen=8327; inserted=8327; revised=0; updated_same_day=0; unchanged=0; warnings=62
+Immediate repeat: mode=live; series=5; seen=8327; inserted=0; revised=0; updated_same_day=0; unchanged=8327; warnings=62
+
+series_id | observation_count | first_observation | last_observation
+--- | --- | --- | ---
+CZ_FX_EURCZK | 7051 | 1999-01-04 | 2026-07-17
+CZ_HICP_CORE_INDEX | 319 | 1999-12-01 | 2026-06-01
+CZ_HICP_ENERGY_INDEX | 319 | 1999-12-01 | 2026-06-01
+CZ_HICP_FOOD_INDEX | 319 | 1999-12-01 | 2026-06-01
+CZ_HICP_SERVICES_INDEX | 319 | 1999-12-01 | 2026-06-01
+
+Source endpoints are stored in metadata.source_url.

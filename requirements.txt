@@ -1,0 +1,13 @@
+# ---------------------------------------------------------------------------
+# The COLLECTOR (Part A, the `kinea` package) uses ONLY the Python standard
+# library — nothing below is needed to fetch or store data. It is listed here
+# purely for the Streamlit DASHBOARD (Part B) and the test suite.
+# ---------------------------------------------------------------------------
+
+# Dashboard (Part B)
+streamlit>=1.30
+altair>=5.0
+pandas>=2.0
+
+# Tests
+pytest>=7.0

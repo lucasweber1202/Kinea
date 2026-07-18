@@ -1,0 +1,20 @@
+[project]
+name = "kinea-collector"
+version = "2.0.0"
+description = "Vintage-aware, idempotent collector for ECB SDMX series (Czech HICP + EUR/CZK)"
+requires-python = ">=3.11"
+# The collector itself has no third-party runtime dependencies.
+dependencies = []
+
+[project.optional-dependencies]
+dashboard = ["streamlit>=1.30", "altair>=5.0", "pandas>=2.0"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+kinea = "kinea.cli:main"
+
+[tool.setuptools]
+packages = ["kinea"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

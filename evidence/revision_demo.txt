@@ -1,0 +1,20 @@
+SIMULATED REVISION DEMONSTRATION
+===============================
+Dedicated database: evidence/revision_demo.db (official ECB values remain untouched)
+Two coexisting rows:
+series_id | reference_date | value | vintage_date | collected_at
+--- | --- | --- | --- | ---
+CZ_HICP_CORE_INDEX | 2026-06-01 | 102.79 | 2026-07-01 | 2026-07-01T10:00:00+00:00
+CZ_HICP_CORE_INDEX | 2026-06-01 | 103.0 | 2026-07-18 | 2026-07-18T10:00:00+00:00
+
+As-of 2026-07-10 (old knowledge):
+series_id | reference_date | value | vintage_date
+--- | --- | --- | ---
+CZ_HICP_CORE_INDEX | 2026-06-01 | 102.79 | 2026-07-01
+
+Current demo view (revised knowledge):
+series_id | reference_date | value | vintage_date
+--- | --- | --- | ---
+CZ_HICP_CORE_INDEX | 2026-06-01 | 103.0 | 2026-07-18
+
+PASS: both vintages coexist and the as-of query returns the correct one.

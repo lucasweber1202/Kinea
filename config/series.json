@@ -1,0 +1,46 @@
+{
+  "source": "ECB",
+  "base_url": "https://data-api.ecb.europa.eu/service/data",
+  "series": [
+    {
+      "series_id": "CZ_FX_EURCZK",
+      "external_id": "EXR.D.CZK.EUR.SP00.A",
+      "dataflow": "EXR",
+      "sdmx_key": "D.CZK.EUR.SP00.A",
+      "frequency": "daily",
+      "unit": "currency"
+    },
+    {
+      "series_id": "CZ_HICP_CORE_INDEX",
+      "external_id": "HICP.M.CZ.N.XEF000.4D0.INX",
+      "dataflow": "HICP",
+      "sdmx_key": "M.CZ.N.XEF000.4D0.INX",
+      "frequency": "monthly",
+      "unit": "index"
+    },
+    {
+      "series_id": "CZ_HICP_ENERGY_INDEX",
+      "external_id": "HICP.M.CZ.N.NRGY00.4D0.INX",
+      "dataflow": "HICP",
+      "sdmx_key": "M.CZ.N.NRGY00.4D0.INX",
+      "frequency": "monthly",
+      "unit": "index"
+    },
+    {
+      "series_id": "CZ_HICP_FOOD_INDEX",
+      "external_id": "HICP.M.CZ.N.FOOD00.4D0.INX",
+      "dataflow": "HICP",
+      "sdmx_key": "M.CZ.N.FOOD00.4D0.INX",
+      "frequency": "monthly",
+      "unit": "index"
+    },
+    {
+      "series_id": "CZ_HICP_SERVICES_INDEX",
+      "external_id": "HICP.M.CZ.N.SERV00.4D0.INX",
+      "dataflow": "HICP",
+      "sdmx_key": "M.CZ.N.SERV00.4D0.INX",
+      "frequency": "monthly",
+      "unit": "index"
+    }
+  ]
+}
