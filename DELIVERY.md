@@ -1,8 +1,9 @@
 # Delivery handoff
 
 This repository is the review-ready submission for the Kinea internship data-collector
-assignment. Release tag `v2.2.0` identifies the delivered source tree; `SHA256SUMS` distributed
-with the release verifies the downloadable ZIP and Git bundle.
+assignment. Release tag `v2.2.0` inside the directly clonable Git bundle identifies the delivered
+source tree; `SHA256SUMS` verifies both downloadable artifacts. GitHub `main` contains the same
+source tree.
 The installable Python package uses the same `2.2.0` version, avoiding separate release/package
 numbering.
 
@@ -107,4 +108,4 @@ changes official values in `evidence/kinea.db`.
 - [x] Short transaction, batched ingest, execution lock and Retry-After handling
 - [x] Source-health and publication-lag reporting
 - [x] Automated tests and fail-closed delivery validator
-- [x] Reproducible ZIP, Git bundle, checksums, and GitHub tag
+- [x] Reproducible ZIP, directly clonable Git bundle, checksums, and coherent `2.2.0` version
