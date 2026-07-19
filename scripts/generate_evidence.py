@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Build the committed evidence; prefer live ECB data and fall back transparently."""
+"""Build review-ready evidence from live ECB data or deterministic offline fixtures."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import io
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,7 +24,6 @@ from kinea.db import AS_OF_QUERY, CURRENT_QUERY, SCHEMA_SQL, connect, table_coun
 from kinea.models import Observation  # noqa: E402
 from kinea.parser import parse_sdmx_csv  # noqa: E402
 from kinea.vintages import ingest_observations  # noqa: E402
-
 
 EVIDENCE = ROOT / "evidence"
 DB_PATH = EVIDENCE / "kinea.db"
@@ -80,17 +80,30 @@ def _collect_quietly(*args, **kwargs):
         return collect(*args, **kwargs)
 
 
+def _promote_evidence(staged: Path, target: Path) -> None:
+    """Promote a validated directory while preserving the previous delivery on failure."""
+    backup_root = Path(tempfile.mkdtemp(prefix=".evidence-backup-", dir=ROOT))
+    backup = backup_root / "evidence"
+    try:
+        if target.exists():
+            target.rename(backup)
+        try:
+            staged.rename(target)
+        except Exception:
+            if backup.exists() and not target.exists():
+                backup.rename(target)
+            raise
+    finally:
+        shutil.rmtree(backup_root, ignore_errors=True)
+
+
 def _build_idempotency_proof(config):
     with tempfile.TemporaryDirectory() as directory:
         conn = connect(Path(directory) / "idempotency.db")
         client = OfflineClient(ROOT / "fixtures" / "v2")
-        _collect_quietly(
-            conn, config, client, collected_at="2026-07-18T10:00:00+00:00"
-        )
+        _collect_quietly(conn, config, client, collected_at="2026-07-18T10:00:00+00:00")
         first = table_counts(conn)
-        _collect_quietly(
-            conn, config, client, collected_at="2026-07-18T11:00:00+00:00"
-        )
+        _collect_quietly(conn, config, client, collected_at="2026-07-18T11:00:00+00:00")
         second = table_counts(conn)
         conn.close()
     delta = {key: second[key] - first[key] for key in first}
@@ -150,16 +163,22 @@ def _build_live(config):
 def _build_offline(config):
     conn = connect(DB_PATH)
     first = _collect_quietly(
-        conn, config, OfflineClient(ROOT / "fixtures" / "v1"),
+        conn,
+        config,
+        OfflineClient(ROOT / "fixtures" / "v1"),
         collected_at="2026-07-01T10:00:00+00:00",
     )
-    release = _collect_quietly(
-        conn, config, OfflineClient(ROOT / "fixtures" / "v2"),
+    _collect_quietly(
+        conn,
+        config,
+        OfflineClient(ROOT / "fixtures" / "v2"),
         collected_at="2026-07-18T10:00:00+00:00",
     )
     before = table_counts(conn)
     repeat = _collect_quietly(
-        conn, config, OfflineClient(ROOT / "fixtures" / "v2"),
+        conn,
+        config,
+        OfflineClient(ROOT / "fixtures" / "v2"),
         collected_at="2026-07-18T11:00:00+00:00",
     )
     after = table_counts(conn)
@@ -183,25 +202,37 @@ def _build_revision_demo(main_conn):
         ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?)
         """,
         (
-            metadata["series_id"], metadata["name"], metadata["description"],
-            metadata["country"], metadata["frequency"], metadata["unit"],
-            metadata["source_url"], metadata["last_publish_date"],
+            metadata["series_id"],
+            metadata["name"],
+            metadata["description"],
+            metadata["country"],
+            metadata["frequency"],
+            metadata["unit"],
+            metadata["source_url"],
+            metadata["last_publish_date"],
             "2026-07-01T10:00:00+00:00",
         ),
     )
     source_rows = [
-        row for row in main_conn.execute(CURRENT_QUERY)
+        row
+        for row in main_conn.execute(CURRENT_QUERY)
         if row["series_id"] == series_id and row["reference_date"] <= "2026-06-01"
     ]
     observations = [Observation(row["reference_date"], float(row["value"])) for row in source_rows]
     ingest_observations(
-        demo, series_id, observations,
-        vintage_date="2026-07-01", collected_at="2026-07-01T10:00:00+00:00",
+        demo,
+        series_id,
+        observations,
+        vintage_date="2026-07-01",
+        collected_at="2026-07-01T10:00:00+00:00",
     )
     target = observations[-1]
     ingest_observations(
-        demo, series_id, [Observation(target.reference_date, target.value + 0.21)],
-        vintage_date="2026-07-18", collected_at="2026-07-18T10:00:00+00:00",
+        demo,
+        series_id,
+        [Observation(target.reference_date, target.value + 0.21)],
+        vintage_date="2026-07-18",
+        collected_at="2026-07-18T10:00:00+00:00",
     )
     demo.execute(
         """
@@ -228,7 +259,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.output_dir:
+    target_evidence = ROOT / "evidence"
+    staging: tempfile.TemporaryDirectory[str] | None = None
+    atomic_live = args.mode == "live" and not args.output_dir
+    if atomic_live:
+        staging = tempfile.TemporaryDirectory(prefix=".evidence-staging-", dir=ROOT)
+        EVIDENCE = Path(staging.name) / "evidence"
+    elif args.output_dir:
         EVIDENCE = Path(args.output_dir).expanduser().resolve()
     elif args.mode == "offline":
         EVIDENCE = ROOT / "evidence" / "offline"
@@ -265,21 +302,26 @@ def main() -> None:
         "idempotency.txt",
         "\n".join(
             [
-                "IDEMPOTENCY PROOF", "=================", *live_proof,
+                "IDEMPOTENCY PROOF",
+                "=================",
+                *live_proof,
                 "DETERMINISTIC OFFLINE CONTROL",
                 "FIRST RUN",
                 f"metadata: {idempotent_first['metadata']}",
                 f"time_series: {idempotent_first['time_series']}",
                 f"logs: {idempotent_first['logs']}",
-                "", "SECOND RUN",
+                "",
+                "SECOND RUN",
                 f"metadata: {idempotent_second['metadata']}",
                 f"time_series: {idempotent_second['time_series']}",
                 f"logs: {idempotent_second['logs']}",
-                "", "DELTA",
+                "",
+                "DELTA",
                 f"metadata: {delta['metadata']}",
                 f"time_series: {delta['time_series']}",
                 f"logs: {delta['logs']}",
-                "", "RESULT: PASS",
+                "",
+                "RESULT: PASS",
             ]
         ),
     )
@@ -295,8 +337,9 @@ def main() -> None:
     ).fetchall()
     past = demo.execute(AS_OF_QUERY, {"as_of": "2026-07-10"}).fetchall()
     past = [row for row in past if row["reference_date"] == reference_date]
-    current = [row for row in demo.execute(CURRENT_QUERY)
-               if row["reference_date"] == reference_date]
+    current = [
+        row for row in demo.execute(CURRENT_QUERY) if row["reference_date"] == reference_date
+    ]
     _write(
         "revision_demo.txt",
         "\n".join(
@@ -305,7 +348,10 @@ def main() -> None:
                 "===============================",
                 "Dedicated database: revision_demo.db (official ECB values remain untouched)",
                 "Two coexisting rows:",
-                _format_rows(history, ["series_id", "reference_date", "value", "vintage_date", "collected_at"]),
+                _format_rows(
+                    history,
+                    ["series_id", "reference_date", "value", "vintage_date", "collected_at"],
+                ),
                 "",
                 "As-of 2026-07-10 (old knowledge):",
                 _format_rows(past, ["series_id", "reference_date", "value", "vintage_date"]),
@@ -325,15 +371,22 @@ def main() -> None:
                 "=========================",
                 f"Series: {history[0]['series_id']}",
                 f"Reference date: {history[0]['reference_date']}",
-                "", "Vintage 1:",
+                "",
+                "Vintage 1:",
                 f"vintage_date: {history[0]['vintage_date']}",
                 f"value: {history[0]['value']}",
-                "", "Vintage 2:",
+                "",
+                "Vintage 2:",
                 f"vintage_date: {history[1]['vintage_date']}",
                 f"value: {history[1]['value']}",
-                "", "AS OF 2026-07-10:", str(past[0]["value"]),
-                "", "CURRENT:", str(current[0]["value"]),
-                "", "RESULT: PASS",
+                "",
+                "AS OF 2026-07-10:",
+                str(past[0]["value"]),
+                "",
+                "CURRENT:",
+                str(current[0]["value"]),
+                "",
+                "RESULT: PASS",
             ]
         ),
     )
@@ -342,7 +395,13 @@ def main() -> None:
     _write("sample_query.sql", SAMPLE_QUERY)
     sample_rows = conn.execute(SAMPLE_QUERY).fetchall()
     sample_columns = [
-        "series_id", "name", "frequency", "unit", "reference_date", "value", "vintage_date"
+        "series_id",
+        "name",
+        "frequency",
+        "unit",
+        "reference_date",
+        "value",
+        "vintage_date",
     ]
     _write("sample_query_output.csv", _csv_rows(sample_rows, sample_columns))
     success_log = conn.execute(
@@ -350,11 +409,15 @@ def main() -> None:
     ).fetchall()
     _write(
         "success_log.txt",
-        _format_rows(success_log, ["id", "started_at", "finished_at", "status", "log_text", "traceback"]),
+        _format_rows(
+            success_log, ["id", "started_at", "finished_at", "status", "log_text", "traceback"]
+        ),
     )
     try:
         _collect_quietly(
-            conn, config, OfflineClient(ROOT / "fixtures" / "missing"),
+            conn,
+            config,
+            OfflineClient(ROOT / "fixtures" / "missing"),
         )
     except FetchError:
         pass
@@ -363,12 +426,17 @@ def main() -> None:
     ).fetchall()
     _write(
         "error_log.txt",
-        _format_rows(error_log, ["id", "started_at", "finished_at", "status", "log_text", "traceback"]),
+        _format_rows(
+            error_log, ["id", "started_at", "finished_at", "status", "log_text", "traceback"]
+        ),
     )
     _write(
         "schema.sql",
-        SCHEMA_SQL + "\n-- Current view\n" + CURRENT_QUERY
-        + "\n-- As-of view (bind :as_of)\n" + AS_OF_QUERY,
+        SCHEMA_SQL
+        + "\n-- Current view\n"
+        + CURRENT_QUERY
+        + "\n-- As-of view (bind :as_of)\n"
+        + AS_OF_QUERY,
     )
 
     counts = table_counts(conn)
@@ -382,11 +450,13 @@ def main() -> None:
         "database_counts.txt",
         "\n".join(
             [
-                "DATABASE COUNTS", "===============",
+                "DATABASE COUNTS",
+                "===============",
                 f"metadata: {counts['metadata']}",
                 f"time_series: {counts['time_series']}",
                 f"logs: {counts['logs']}",
-                "", "SERIES COVERAGE",
+                "",
+                "SERIES COVERAGE",
                 _format_rows(
                     coverage,
                     ["series_id", "observation_count", "first_observation", "last_observation"],
@@ -398,8 +468,13 @@ def main() -> None:
     if source_kind == "live":
         live_samples, portal_status = _validate_live_samples(conn, config)
         sample_columns = [
-            "series_id", "external_id", "http_status", "reference_date",
-            "raw_value", "stored_value", "match",
+            "series_id",
+            "external_id",
+            "http_status",
+            "reference_date",
+            "raw_value",
+            "stored_value",
+            "match",
         ]
         live_text = "\n".join(
             [
@@ -412,7 +487,10 @@ def main() -> None:
                 f"First collection: {first.log_text}",
                 f"Immediate repeat: {repeat.log_text}",
                 "",
-                _format_rows(coverage, ["series_id", "observation_count", "first_observation", "last_observation"]),
+                _format_rows(
+                    coverage,
+                    ["series_id", "observation_count", "first_observation", "last_observation"],
+                ),
                 "",
                 "RAW RESPONSE SAMPLE COMPARISON - ALL FIVE SERIES",
                 _format_rows(live_samples, sample_columns),
@@ -430,13 +508,21 @@ Run: python scripts/generate_evidence.py --mode live
 """
     _write("live_validation.txt", live_text)
     conn.close()
-    if source_kind == "live" and EVIDENCE == ROOT / "evidence":
+    if atomic_live:
         subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "validate_delivery.py")],
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "validate_delivery.py"),
+                "--evidence-dir",
+                str(EVIDENCE),
+            ],
             cwd=ROOT,
             check=True,
         )
-        print("Generated complete live evidence and validation_report.txt")
+        _promote_evidence(EVIDENCE, target_evidence)
+        if staging is not None:
+            staging.cleanup()
+        print("Generated, validated, and atomically promoted complete live evidence")
     else:
         print(f"Generated isolated {source_kind} evidence in {EVIDENCE}")
 

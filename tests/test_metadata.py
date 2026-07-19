@@ -8,7 +8,6 @@ from kinea.config import load_config
 from kinea.db import connect
 from kinea.identifiers import derive_description, derive_name
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -16,7 +15,9 @@ ROOT = Path(__file__).resolve().parent.parent
 def populated():
     conn = connect(":memory:")
     collect(
-        conn, load_config(), OfflineClient(ROOT / "fixtures" / "v2"),
+        conn,
+        load_config(),
+        OfflineClient(ROOT / "fixtures" / "v2"),
         collected_at="2026-07-18T10:00:00+00:00",
     )
     return conn
@@ -46,7 +47,11 @@ def test_metadata_coverage_is_computed_from_time_series(populated):
             """,
             (row["series_id"],),
         ).fetchone()
-        assert (row["first_observation"], row["last_observation"], row["observation_count"]) == tuple(computed)
+        assert (
+            row["first_observation"],
+            row["last_observation"],
+            row["observation_count"],
+        ) == tuple(computed)
 
 
 def test_names_and_descriptions_are_derived(populated):

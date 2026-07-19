@@ -1,8 +1,15 @@
-"""Streamlit presentation layer for the assignment's exact three-table schema."""
+"""Streamlit presentation layer for the assignment's exact three-table schema.
+
+Design goals: a professional, intuitive read of the dataset. The store holds raw published
+levels versioned by vintage; every transformation (year-over-year, rebasing) is DERIVED
+here in the view layer. The six tabs move from headline story -> component detail ->
+FX -> the revision (vintage) mechanics -> point-in-time (as-of) -> audit.
+"""
 
 from __future__ import annotations
 
 import argparse
+import html
 import sqlite3
 import sys
 from datetime import date
@@ -12,20 +19,56 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from kinea.db import AS_OF_QUERY, CURRENT_QUERY  # noqa: E402
 
-
 DEFAULT_DB = ROOT / "evidence" / "kinea.db"
 DEFAULT_REVISION_DB = ROOT / "evidence" / "revision_demo.db"
-BLUE = "#155EEF"
-NAVY = "#102A43"
-TEAL = "#0E9384"
-ORANGE = "#F79009"
-RED = "#D92D20"
-PALETTE = [BLUE, TEAL, ORANGE, RED]
+
+# Stable, semantic, colourblind-safe palette (validated with the dataviz palette checker).
+COLORS = {
+    "CZ_HICP_CORE_INDEX": "#2a78d6",  # blue
+    "CZ_HICP_ENERGY_INDEX": "#eda100",  # amber  (energy)
+    "CZ_HICP_FOOD_INDEX": "#008300",  # green  (food)
+    "CZ_HICP_SERVICES_INDEX": "#4a3aa7",  # violet
+    "CZ_FX_EURCZK": "#0e9384",  # teal
+}
+SHORT = {
+    "CZ_HICP_CORE_INDEX": "Core",
+    "CZ_HICP_ENERGY_INDEX": "Energy",
+    "CZ_HICP_FOOD_INDEX": "Food",
+    "CZ_HICP_SERVICES_INDEX": "Services",
+    "CZ_FX_EURCZK": "EUR/CZK",
+}
+INK, MUTED, GRID = "#0f1e2e", "#5b6b7b", "#eef1f4"
+
+CSS = """
+<style>
+.block-container {padding-top: 2.0rem; padding-bottom: 3rem; max-width: 1480px;}
+#MainMenu, footer {visibility: hidden;}
+h1 {font-weight: 750; letter-spacing: -0.02em; color: #0f1e2e; margin-bottom: .1rem;}
+h2, h3 {color: #0f1e2e; font-weight: 650;}
+.lead {color:#5b6b7b; font-size:1.02rem; margin:-2px 0 6px;}
+/* KPI cards */
+.kpi {background:#ffffff; border:1px solid #e6eaf0; border-radius:14px;
+      padding:16px 18px 14px; box-shadow:0 1px 2px rgba(16,42,67,.04); height:100%;}
+.kpi .lab {font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; color:#7a8794; font-weight:600;}
+.kpi .val {font-size:1.9rem; font-weight:740; color:#0f1e2e; line-height:1.15; margin-top:2px;}
+.kpi .sub {font-size:.8rem; color:#7a8794; margin-top:2px;}
+/* small stat tiles */
+.tile {background:#f7f9fc; border:1px solid #e6eaf0; border-radius:12px; padding:12px 14px;}
+.tile .t-lab {font-size:.74rem; color:#5b6b7b; font-weight:600;}
+.tile .t-val {font-size:1.25rem; font-weight:700; color:#0f1e2e;}
+.tile .t-dn {color:#b42318;} .tile .t-up {color:#067647;}
+.pill {display:inline-block; background:#eef4ff; color:#155EEF; border:1px solid #d6e4ff;
+       border-radius:999px; padding:3px 12px; font-size:.8rem; font-weight:600;}
+div[data-testid="stMetric"] {background:#f7f9fc; border:1px solid #e6eaf0; border-radius:12px; padding:12px 16px;}
+.stTabs [data-baseweb="tab-list"] {gap:6px;}
+.stTabs [data-baseweb="tab"] {padding:8px 14px; font-weight:600;}
+hr {margin:1.1rem 0; border-color:#eef1f4;}
+</style>
+"""
 
 
 def _db_path() -> Path:
@@ -38,14 +81,13 @@ def _db_path() -> Path:
 @st.cache_data(show_spinner=False)
 def load_data(path: str, mtime: float):
     del mtime
-    conn = sqlite3.connect(path)
-    metadata = pd.read_sql_query("SELECT * FROM metadata ORDER BY series_id", conn)
-    current = pd.read_sql_query(CURRENT_QUERY, conn)
-    history = pd.read_sql_query(
-        "SELECT * FROM time_series ORDER BY series_id, reference_date, vintage_date", conn
-    )
-    logs = pd.read_sql_query("SELECT * FROM logs ORDER BY id DESC", conn)
-    conn.close()
+    with sqlite3.connect(path) as conn:
+        metadata = pd.read_sql_query("SELECT * FROM metadata ORDER BY series_id", conn)
+        current = pd.read_sql_query(CURRENT_QUERY, conn)
+        history = pd.read_sql_query(
+            "SELECT * FROM time_series ORDER BY series_id, reference_date, vintage_date", conn
+        )
+        logs = pd.read_sql_query("SELECT * FROM logs ORDER BY id DESC", conn)
     for frame in (current, history):
         if not frame.empty:
             frame["reference_date"] = pd.to_datetime(frame["reference_date"])
@@ -56,90 +98,203 @@ def load_data(path: str, mtime: float):
 @st.cache_data(show_spinner=False)
 def load_as_of(path: str, mtime: float, as_of: str) -> pd.DataFrame:
     del mtime
-    conn = sqlite3.connect(path)
-    frame = pd.read_sql_query(AS_OF_QUERY, conn, params={"as_of": as_of})
-    conn.close()
+    with sqlite3.connect(path) as conn:
+        frame = pd.read_sql_query(AS_OF_QUERY, conn, params={"as_of": as_of})
     if not frame.empty:
         frame["reference_date"] = pd.to_datetime(frame["reference_date"])
         frame["vintage_date"] = pd.to_datetime(frame["vintage_date"])
     return frame
 
 
-def _series_chart(frame: pd.DataFrame, labels: dict[str, str], y_title: str):
-    chart_data = frame.copy()
-    chart_data["series"] = chart_data["series_id"].map(labels).fillna(chart_data["series_id"])
-    return (
-        alt.Chart(chart_data)
-        .mark_line(strokeWidth=2.4)
+def _csv_bytes(frame: pd.DataFrame) -> bytes:
+    return frame.to_csv(index=False).encode("utf-8")
+
+
+def _short(sid: str) -> str:
+    return SHORT.get(sid, sid)
+
+
+def _color_scale(series_ids) -> alt.Scale:
+    ids = [s for s in COLORS if s in set(series_ids)]
+    return alt.Scale(domain=[_short(s) for s in ids], range=[COLORS[s] for s in ids])
+
+
+def kpi(col, label: str, value: str, sub: str = "", accent: str = "#155EEF") -> None:
+    safe_label = html.escape(str(label))
+    safe_value = html.escape(str(value))
+    safe_sub = html.escape(str(sub))
+    col.markdown(
+        f'<div class="kpi" style="border-top:3px solid {accent}">'
+        f'<div class="lab">{safe_label}</div><div class="val">{safe_value}</div>'
+        f'<div class="sub">{safe_sub}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def add_yoy(frame: pd.DataFrame, periods: int) -> pd.DataFrame:
+    out = frame.sort_values("reference_date").copy()
+    out["value"] = out.groupby("series_id")["value"].transform(
+        lambda s: s.pct_change(periods, fill_method=None) * 100.0
+    )
+    return out.dropna(subset=["value"])
+
+
+def rebase100(frame: pd.DataFrame) -> pd.DataFrame:
+    def rebase(series: pd.Series) -> pd.Series:
+        base = series.iloc[0]
+        if pd.isna(base) or base == 0:
+            return pd.Series(float("nan"), index=series.index)
+        return series / base * 100.0
+
+    out = frame.sort_values("reference_date").copy()
+    out["value"] = out.groupby("series_id")["value"].transform(rebase)
+    return out.dropna(subset=["value"])
+
+
+def line_chart(
+    frame: pd.DataFrame,
+    y_title: str,
+    value_fmt: str = ".2f",
+    height: int = 380,
+    direct_labels: bool = False,
+) -> alt.LayerChart:
+    data = frame.copy()
+    data["Series"] = data["series_id"].map(_short).fillna(data["series_id"])
+    scale = _color_scale(frame["series_id"].unique())
+    multi = data["series_id"].nunique() > 1
+    color = alt.Color(
+        "Series:N",
+        title=None,
+        scale=scale,
+        legend=alt.Legend(orient="top", symbolType="stroke") if multi else None,
+    )
+    dash = alt.StrokeDash(
+        "Series:N",
+        title=None,
+        legend=None,
+        scale=alt.Scale(
+            domain=[_short(s) for s in COLORS if s in set(frame["series_id"])],
+            range=[[1, 0], [7, 3], [2, 2], [9, 3, 2, 3], [5, 2]],
+        ),
+    )
+
+    base = alt.Chart(data).encode(
+        x=alt.X("reference_date:T", title=None, axis=alt.Axis(grid=False)),
+        y=alt.Y(
+            "value:Q",
+            title=y_title,
+            scale=alt.Scale(zero=False),
+            axis=alt.Axis(grid=True, gridColor=GRID),
+        ),
+    )
+    line = base.mark_line(strokeWidth=2, interpolate="monotone").encode(
+        color=color if multi else alt.value(list(scale.range)[0] if scale.range else "#2a78d6"),
+        strokeDash=dash if multi else alt.value([1, 0]),
+    )
+
+    nearest = alt.selection_point(
+        nearest=True, on="mouseover", fields=["reference_date"], empty=False
+    )
+    selectors = (
+        base.mark_point(opacity=0)
+        .add_params(nearest)
         .encode(
-            x=alt.X("reference_date:T", title=None),
-            y=alt.Y("value:Q", title=y_title, scale=alt.Scale(zero=False)),
-            color=alt.Color(
-                "series:N",
-                title=None,
-                scale=alt.Scale(range=PALETTE),
-                legend=alt.Legend(orient="top", columns=2),
-            ),
             tooltip=[
-                alt.Tooltip("series:N", title="Series"),
+                alt.Tooltip("Series:N"),
                 alt.Tooltip("reference_date:T", title="Reference date"),
-                alt.Tooltip("value:Q", title="Value", format=".3f"),
+                alt.Tooltip("value:Q", title=y_title, format=value_fmt),
                 alt.Tooltip("vintage_date:T", title="Vintage"),
-            ],
+            ]
         )
-        .properties(height=390)
-        .interactive()
+    )
+    hover_pts = base.mark_point(size=60, filled=True).encode(
+        color=color if multi else alt.value("#2a78d6"),
+        opacity=alt.condition(nearest, alt.value(1), alt.value(0)),
+    )
+    rule = (
+        base.transform_filter(nearest)
+        .mark_rule(color="#c3ccd6", strokeWidth=1)
+        .encode(x="reference_date:T")
+    )
+
+    layers = [line, selectors, hover_pts, rule]
+    if direct_labels and multi:
+        last = data.sort_values("reference_date").groupby("series_id", as_index=False).tail(1)
+        labels = (
+            alt.Chart(last)
+            .mark_text(align="left", dx=7, dy=0, fontWeight=600, fontSize=12)
+            .encode(x="reference_date:T", y="value:Q", text="Series:N", color=color)
+        )
+        layers.append(labels)
+    chart = alt.layer(*layers).properties(height=height)
+    return (
+        chart.configure_view(stroke=None)
+        .configure_axis(
+            labelColor=MUTED,
+            titleColor=MUTED,
+            titleFontWeight=600,
+            domainColor=GRID,
+            tickColor=GRID,
+        )
+        .configure_legend(labelColor=INK, labelFontSize=12)
     )
 
 
-def _period_filter(frame: pd.DataFrame, key: str) -> pd.DataFrame:
-    """Offer a compact period selector without changing the stored native data."""
-    period = st.selectbox(
-        "Display period",
-        ["Full history", "Last 10 years", "Last 5 years", "Last 2 years"],
-        key=key,
-    )
-    if frame.empty or period == "Full history":
+def latest_reading(current: pd.DataFrame, sid: str, periods: int):
+    s = current[current["series_id"] == sid].sort_values("reference_date")
+    if s.empty:
+        return None, None
+    latest = s["value"].iloc[-1]
+    yoy = None
+    if len(s) > periods:
+        prev = s["value"].iloc[-1 - periods]
+        if prev:
+            yoy = (latest / prev - 1) * 100.0
+    return latest, yoy
+
+
+def period_selector(frame: pd.DataFrame, key: str, default: str = "Last 10 years") -> pd.DataFrame:
+    options = ["Last 2 years", "Last 5 years", "Last 10 years", "Full history"]
+    choice = st.radio("Window", options, index=options.index(default), horizontal=True, key=key)
+    if frame.empty or choice == "Full history":
         return frame
-    years = {"Last 10 years": 10, "Last 5 years": 5, "Last 2 years": 2}[period]
+    years = {"Last 2 years": 2, "Last 5 years": 5, "Last 10 years": 10}[choice]
     cutoff = frame["reference_date"].max() - pd.DateOffset(years=years)
     return frame[frame["reference_date"] >= cutoff]
 
 
-def _csv_bytes(frame: pd.DataFrame) -> bytes:
-    """Serialize the visible data without adding a synthetic dataframe index."""
-
-    return frame.to_csv(index=False).encode("utf-8")
+def add_freshness(metadata: pd.DataFrame, today: date | None = None) -> pd.DataFrame:
+    """Add a frequency-aware freshness indicator for operational review."""
+    result = metadata.copy()
+    as_of = pd.Timestamp(today or date.today())
+    last = pd.to_datetime(result["last_observation"], errors="coerce")
+    result["lag_days"] = (as_of - last).dt.days.clip(lower=0)
+    thresholds = {"daily": 7, "weekly": 21, "monthly": 75, "quarterly": 150}
+    allowed = result["frequency"].map(thresholds).fillna(90)
+    result["freshness"] = result["lag_days"].le(allowed).map({True: "Fresh", False: "Review"})
+    return result
 
 
 def main() -> None:
     st.set_page_config(page_title="Czech inflation predictors", page_icon="📊", layout="wide")
-    st.markdown(
-        """
-        <style>
-        .block-container {padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1450px;}
-        div[data-testid="stMetric"] {background:#F8FAFC; border:1px solid #E4E7EC;
-            border-radius:12px; padding:16px 18px;}
-        h1, h2, h3 {color:#102A43;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(CSS, unsafe_allow_html=True)
+
     db_path = _db_path()
     if not db_path.exists():
         st.error(f"Database not found: {db_path}")
-        st.code("python scripts/generate_evidence.py")
+        st.code("python scripts/generate_evidence.py --mode live")
         st.stop()
 
     mtime = db_path.stat().st_mtime
     metadata, current, history, logs = load_data(str(db_path), mtime)
-    labels = dict(zip(metadata["series_id"], metadata["name"]))
+    if metadata.empty or current.empty:
+        st.warning("The database exists but contains no collected series yet.")
+        st.code("python scripts/generate_evidence.py --mode live")
+        st.stop()
 
-    revision_path = db_path
-    revision_mtime = mtime
-    revision_metadata = metadata
-    revision_current = current
-    revision_history = history
+    # Vintages/as-of read from the labelled simulated-revision DB when the main DB has none.
+    revision_path, revision_mtime = db_path, mtime
+    revision_metadata, revision_current, revision_history = metadata, current, history
     demo_used = False
     revised_in_main = history.groupby(["series_id", "reference_date"]).size().gt(1).any()
     if not revised_in_main and DEFAULT_REVISION_DB.exists():
@@ -148,149 +303,233 @@ def main() -> None:
         revision_metadata, revision_current, revision_history, _ = load_data(
             str(revision_path), revision_mtime
         )
-        labels.update(dict(zip(revision_metadata["series_id"], revision_metadata["name"])))
         demo_used = True
 
-    st.title("Czech inflation predictors")
-    st.caption(
-        "ECB HICP components and EUR/CZK · raw published levels · versioned by the day each value was observed"
+    # ---- header -----------------------------------------------------------------------
+    latest_reference = current["reference_date"].max() if not current.empty else None
+    st.markdown("# Czech inflation predictors")
+    st.markdown(
+        '<p class="lead">ECB HICP components &amp; EUR/CZK — raw published levels, '
+        "versioned by the day each value was observed.</p>",
+        unsafe_allow_html=True,
     )
+    if latest_reference is not None:
+        st.markdown(
+            f'<span class="pill">Data through {latest_reference.date()}</span>',
+            unsafe_allow_html=True,
+        )
+    st.write("")
 
     revisions = max(len(revision_history) - len(revision_current), 0)
-    latest_reference = current["reference_date"].max() if not current.empty else None
+    revision_label = "Demo revisions" if demo_used else "Observed revisions"
+    revision_sub = (
+        "simulated evidence · official ECB data unchanged"
+        if demo_used
+        else "older vintages kept, never overwritten"
+    )
     successful_runs = int((logs["status"] == "success").sum()) if not logs.empty else 0
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Series", f"{len(metadata)}")
-    k2.metric("Current observations", f"{len(current):,}")
-    k3.metric("Revisions retained", f"{revisions:,}")
-    k4.metric("Successful runs", f"{successful_runs}")
+    span = ""
+    if not metadata.empty:
+        span = f"{metadata['first_observation'].min()} → {metadata['last_observation'].max()}"
+    c1, c2, c3, c4 = st.columns(4)
+    kpi(c1, "Series collected", f"{len(metadata)}", "complete ECB predictor set", "#155EEF")
+    kpi(c2, "Observations", f"{len(current):,}", span, "#0e9384")
+    kpi(c3, revision_label, f"{revisions:,}", revision_sub, "#eda100")
+    kpi(c4, "Successful runs", f"{successful_runs}", "idempotent · one log per run", "#4a3aa7")
+    st.write("")
 
     overview, hicp_tab, fx_tab, vintage_tab, as_of_tab, audit_tab = st.tabs(
         ["Overview", "HICP components", "EUR/CZK", "Vintages", "As-of", "Audit"]
     )
 
+    # ---- Overview ---------------------------------------------------------------------
     with overview:
-        left, right = st.columns([3, 2])
+        left, right = st.columns([3, 2], gap="large")
         with left:
-            st.subheader("What is in the dataset")
-            st.markdown(
-                "The four HICP components support bottom-up inflation analysis; EUR/CZK captures "
-                "exchange-rate pass-through into tradable goods and energy. Values stay in their "
-                "native frequency and raw form. Transformations belong in the analysis layer."
+            st.subheader("Inflation components, year over year")
+            st.caption(
+                "Derived from the stored index levels (2025 = 100). The store never keeps "
+                "transformed values — only what the ECB publishes."
             )
-            coverage = metadata[
-                ["name", "frequency", "unit", "first_observation", "last_observation", "observation_count"]
+            hicp_ids = [s for s in metadata["series_id"] if "_HICP_" in s]
+            hero = current[current["series_id"].isin(hicp_ids)]
+            hero = hero[
+                hero["reference_date"] >= hero["reference_date"].max() - pd.DateOffset(years=10)
+            ]
+            hero_yoy = add_yoy(hero, 12)
+            if not hero_yoy.empty:
+                st.altair_chart(
+                    line_chart(hero_yoy, "% change vs a year earlier", ".1f", 360), width="stretch"
+                )
+            st.markdown("**Latest reading**")
+            tiles = st.columns(len(hicp_ids))
+            for tcol, sid in zip(tiles, hicp_ids, strict=True):
+                val, yoy = latest_reading(current, sid, 12)
+                arrow = "" if yoy is None else ("▲" if yoy >= 0 else "▼")
+                cls = "t-up" if (yoy is not None and yoy >= 0) else "t-dn"
+                yoy_txt = (
+                    "" if yoy is None else f'<span class="{cls}">{arrow} {yoy:+.1f}% y/y</span>'
+                )
+                tcol.markdown(
+                    f'<div class="tile"><div class="t-lab">{_short(sid)}</div>'
+                    f'<div class="t-val">{val:.2f}</div><div style="font-size:.8rem">{yoy_txt}</div></div>',
+                    unsafe_allow_html=True,
+                )
+        with right:
+            st.subheader("What's in the dataset")
+            coverage = add_freshness(metadata)[
+                [
+                    "name",
+                    "frequency",
+                    "unit",
+                    "first_observation",
+                    "last_observation",
+                    "observation_count",
+                    "lag_days",
+                    "freshness",
+                ]
             ].rename(
                 columns={
                     "name": "Series",
-                    "frequency": "Frequency",
+                    "frequency": "Freq",
                     "unit": "Unit",
                     "first_observation": "First",
                     "last_observation": "Last",
-                    "observation_count": "Observations",
+                    "observation_count": "Obs",
+                    "lag_days": "Lag (days)",
+                    "freshness": "Freshness",
                 }
             )
             st.dataframe(coverage, hide_index=True, width="stretch")
-            sources = metadata[["name", "source_url"]].rename(
-                columns={"name": "Series", "source_url": "Official ECB endpoint"}
+            st.markdown(
+                "**How the versioning works**\n"
+                "- `reference_date` — the period a number describes\n"
+                "- `vintage_date` — the day we observed that value\n"
+                "- unchanged value → no new row · revision → new vintage · same-day fix → update in place"
             )
-            with st.expander("Official sources"):
-                st.dataframe(sources, hide_index=True, width="stretch")
+            with st.expander("Official ECB endpoints"):
+                st.dataframe(
+                    metadata[["name", "source_url"]].rename(
+                        columns={"name": "Series", "source_url": "Endpoint"}
+                    ),
+                    hide_index=True,
+                    width="stretch",
+                )
             d1, d2 = st.columns(2)
             d1.download_button(
-                "Download metadata CSV",
+                "Metadata CSV",
                 _csv_bytes(metadata),
                 "kinea-metadata.csv",
                 "text/csv",
-                key="download_metadata",
+                key="dl_meta",
+                width="stretch",
             )
             d2.download_button(
-                "Download current observations CSV",
+                "Current obs CSV",
                 _csv_bytes(current),
-                "kinea-current-observations.csv",
+                "kinea-current.csv",
                 "text/csv",
-                key="download_current",
+                key="dl_cur",
+                width="stretch",
             )
-        with right:
-            st.subheader("Data contract")
-            st.markdown(
-                """
-                - `reference_date`: period described by the number
-                - `vintage_date`: day this version was observed
-                - unchanged values create no row
-                - later revisions append a new vintage
-                - same-day corrections update that day's row
-                """
-            )
-            if latest_reference is not None:
-                st.info(f"Latest reference date in this database: **{latest_reference.date()}**")
-            if not logs.empty:
-                last_log = logs.iloc[0]
-                st.metric("Last collection status", str(last_log["status"]).upper())
-                st.caption(f"Finished at {last_log['finished_at']}")
 
+    # ---- HICP components --------------------------------------------------------------
     with hicp_tab:
-        hicp_ids = [sid for sid in metadata["series_id"] if "_HICP_" in sid]
-        selected = st.multiselect(
-            "Components",
-            hicp_ids,
-            default=hicp_ids,
-            format_func=lambda value: labels[value],
+        hicp_ids = [s for s in metadata["series_id"] if "_HICP_" in s]
+        top = st.columns([3, 2, 2])
+        selected = top[0].multiselect("Components", hicp_ids, default=hicp_ids, format_func=_short)
+        view = top[1].selectbox(
+            "View", ["Index level (2025=100)", "Year-over-year %", "Rebased to 100"]
         )
         hicp = current[current["series_id"].isin(selected)]
-        hicp = _period_filter(hicp, "hicp_period")
+        with top[2]:
+            hicp = period_selector(hicp, "hicp_win", "Last 10 years")
         if hicp.empty:
             st.info("Select at least one component.")
         else:
-            st.altair_chart(
-                _series_chart(hicp, labels, "HICP index (2025 = 100)"),
-                width="stretch",
-            )
+            if view == "Year-over-year %":
+                shown, ytitle, fmt = add_yoy(hicp, 12), "% change vs a year earlier", ".1f"
+            elif view == "Rebased to 100":
+                shown, ytitle, fmt = rebase100(hicp), "Index (window start = 100)", ".1f"
+            else:
+                shown, ytitle, fmt = hicp, "HICP index (2025 = 100)", ".2f"
+            st.altair_chart(line_chart(shown, ytitle, fmt, 400), width="stretch")
+            if view != "Index level (2025=100)":
+                st.caption("Derived in the view layer — the database stores only raw index levels.")
             latest = hicp.sort_values("reference_date").groupby("series_id").tail(1).copy()
-            latest["Series"] = latest["series_id"].map(labels)
+            latest["Series"] = latest["series_id"].map(_short)
+            latest["reference_date"] = latest["reference_date"].dt.date
+            latest["vintage_date"] = latest["vintage_date"].dt.date
             st.dataframe(
-                latest[["Series", "reference_date", "value", "vintage_date"]]
-                .rename(columns={"reference_date": "Reference date", "value": "Index", "vintage_date": "Vintage"}),
+                latest[["Series", "reference_date", "value", "vintage_date"]].rename(
+                    columns={
+                        "reference_date": "Reference date",
+                        "value": "Index",
+                        "vintage_date": "Vintage",
+                    }
+                ),
                 hide_index=True,
                 width="stretch",
             )
             st.download_button(
-                "Download displayed HICP CSV",
+                "Download displayed CSV",
                 _csv_bytes(hicp),
-                "kinea-hicp-selection.csv",
+                "kinea-hicp.csv",
                 "text/csv",
-                key="download_hicp",
+                key="dl_hicp",
             )
 
+    # ---- EUR/CZK ----------------------------------------------------------------------
     with fx_tab:
-        fx = current[current["series_id"].str.contains("_FX_", na=False)]
-        st.markdown(
-            "**Interpretation:** the number of Czech koruna per euro. A higher value means a weaker koruna."
+        fx_all = current[current["series_id"].str.contains("_FX_", na=False)]
+        st.subheader("EUR/CZK reference rate")
+        st.caption(
+            "Czech koruna per euro. A higher value means a weaker koruna — a channel for "
+            "imported inflation into tradable goods and energy."
         )
-        if not fx.empty:
-            fx = _period_filter(fx, "fx_period")
-            st.altair_chart(
-                _series_chart(fx, labels, "CZK per EUR"), width="stretch"
+        if not fx_all.empty:
+            fx = period_selector(fx_all, "fx_win", "Last 5 years")
+            s = fx.sort_values("reference_date")
+            t = st.columns(4)
+            t[0].markdown(
+                f'<div class="tile"><div class="t-lab">Latest</div>'
+                f'<div class="t-val">{s["value"].iloc[-1]:.3f}</div></div>',
+                unsafe_allow_html=True,
             )
-            fx_meta = metadata[metadata["series_id"].str.contains("_FX_", na=False)].iloc[0]
-            f1, f2, f3 = st.columns(3)
-            f1.metric("Frequency", fx_meta["frequency"])
-            f2.metric("Unit", fx_meta["unit"])
-            f3.metric("Displayed observations", f"{len(fx):,}")
+            t[1].markdown(
+                f'<div class="tile"><div class="t-lab">Window min</div>'
+                f'<div class="t-val">{s["value"].min():.3f}</div></div>',
+                unsafe_allow_html=True,
+            )
+            t[2].markdown(
+                f'<div class="tile"><div class="t-lab">Window max</div>'
+                f'<div class="t-val">{s["value"].max():.3f}</div></div>',
+                unsafe_allow_html=True,
+            )
+            t[3].markdown(
+                f'<div class="tile"><div class="t-lab">Observations</div>'
+                f'<div class="t-val">{len(fx):,}</div></div>',
+                unsafe_allow_html=True,
+            )
+            st.write("")
+            st.altair_chart(
+                line_chart(fx, "CZK per EUR", ".3f", 400, direct_labels=False), width="stretch"
+            )
             st.download_button(
-                "Download displayed EUR/CZK CSV",
+                "Download displayed CSV",
                 _csv_bytes(fx),
-                "kinea-eurczk-selection.csv",
+                "kinea-eurczk.csv",
                 "text/csv",
-                key="download_fx",
+                key="dl_fx",
             )
 
+    # ---- Vintages ---------------------------------------------------------------------
     with vintage_tab:
-        st.subheader("Inspect revision history")
+        st.subheader("Revision history (vintages)")
         if demo_used:
             st.info(
-                "This tab uses `evidence/revision_demo.db`, a labelled simulated revision. "
-                "The official values in `evidence/kinea.db` remain untouched."
+                "Showing `evidence/revision_demo.db` — a labelled, simulated revision. The "
+                "official values in `evidence/kinea.db` are never modified."
             )
         grouped = (
             revision_history.groupby(["series_id", "reference_date"], as_index=False)
@@ -299,154 +538,270 @@ def main() -> None:
         )
         revised = grouped[grouped["versions"] > 1]
         if revised.empty:
-            st.info("This database has no multi-vintage observation yet.")
+            st.info("No multi-vintage observation in this database yet.")
         else:
             c1, c2 = st.columns(2)
-            revised_series = sorted(revised["series_id"].unique())
-            chosen_series = c1.selectbox(
-                "Revised series", revised_series, format_func=lambda value: labels[value]
-            )
-            revised_dates = revised[revised["series_id"] == chosen_series]["reference_date"]
-            chosen_reference = c2.selectbox(
-                "Reference date", sorted(revised_dates.dt.date.unique())
-            )
+            rseries = sorted(revised["series_id"].unique())
+            chosen = c1.selectbox("Revised series", rseries, format_func=_short)
+            rdates = revised[revised["series_id"] == chosen]["reference_date"]
+            chosen_ref = c2.selectbox("Reference date", sorted(rdates.dt.date.unique()))
             detail = revision_history[
-                (revision_history["series_id"] == chosen_series)
-                & (revision_history["reference_date"].dt.date == chosen_reference)
+                (revision_history["series_id"] == chosen)
+                & (revision_history["reference_date"].dt.date == chosen_ref)
             ].sort_values("vintage_date")
-            first, latest = detail.iloc[0], detail.iloc[-1]
-            st.success(
-                f"{labels[chosen_series]} · {chosen_reference}: "
-                f"{first['value']:.2f} → {latest['value']:.2f} "
-                f"(change {latest['value'] - first['value']:+.2f})"
+            first, last = detail.iloc[0], detail.iloc[-1]
+            dv = last["value"] - first["value"]
+            safe_series = html.escape(_short(chosen))
+            st.markdown(
+                f'<div class="tile" style="border-left:4px solid {COLORS.get(chosen, "#155EEF")}">'
+                f"<b>{safe_series} · {chosen_ref}</b> — first observed "
+                f"<b>{first['value']:.2f}</b> on {first['vintage_date'].date()}, currently "
+                f"<b>{last['value']:.2f}</b> (Δ {dv:+.2f})</div>",
+                unsafe_allow_html=True,
             )
-            st.dataframe(
-                detail[["reference_date", "value", "vintage_date", "collected_at"]]
-                .rename(columns={"reference_date": "Reference date", "value": "Value",
-                                 "vintage_date": "Vintage date", "collected_at": "Collected at"}),
-                hide_index=True,
-                width="stretch",
-            )
-            st.download_button(
-                "Download vintage history CSV",
-                _csv_bytes(detail),
-                "kinea-vintage-history.csv",
-                "text/csv",
-                key="download_vintages",
-            )
-
-            st.subheader("Old versus current")
-            comparison = detail[["vintage_date", "value"]].copy()
-            comparison["Version"] = ["Old"] + ["Current"] * (len(comparison) - 1)
-            comparison["Difference from first"] = comparison["value"] - first["value"]
-            st.dataframe(
-                comparison[["Version", "vintage_date", "value", "Difference from first"]]
-                .rename(columns={"vintage_date": "Vintage date", "value": "Value"}),
-                hide_index=True,
-                width="stretch",
-            )
-
-    with as_of_tab:
-        st.subheader("Historical snapshot (as-of)")
-        st.markdown(
-            "Select a series and a knowledge date. The query excludes every vintage observed "
-            "after that date, then ranks the remaining versions per reference date."
-        )
-        vintage_dates = revision_history["vintage_date"].dt.date
-        min_vintage, max_vintage = vintage_dates.min(), vintage_dates.max()
-        a1, a2 = st.columns([1, 2])
-        as_of = a1.date_input(
-            "What did we know on?",
-            value=max_vintage,
-            min_value=min_vintage,
-            max_value=max_vintage,
-        )
-        as_of_series = a2.selectbox(
-            "Series for snapshot", revision_metadata["series_id"].tolist(),
-            format_func=lambda value: labels[value], key="as_of_series"
-        )
-        snapshot = load_as_of(
-            str(revision_path), revision_mtime, date.isoformat(as_of)
-        )
-        snapshot = snapshot[snapshot["series_id"] == as_of_series]
-        if snapshot.empty:
-            st.warning("No value had been observed for this series by the selected date.")
-        else:
-            st.altair_chart(
-                _series_chart(snapshot, labels, "Value known on selected date"),
-                width="stretch",
-            )
-            st.caption(
-                f"Snapshot contains {len(snapshot)} reference dates, using only vintages on or before {as_of}."
-            )
-            st.download_button(
-                "Download as-of snapshot CSV",
-                _csv_bytes(snapshot),
-                f"kinea-as-of-{as_of}.csv",
-                "text/csv",
-                key="download_as_of",
-            )
-            current_selection = revision_current[
-                revision_current["series_id"] == as_of_series
-            ][["reference_date", "value", "vintage_date"]].rename(
-                columns={"value": "current_value", "vintage_date": "current_vintage"}
-            )
-            comparison = snapshot[["reference_date", "value", "vintage_date"]].merge(
-                current_selection, on="reference_date", how="left"
-            )
-            comparison["difference"] = comparison["current_value"] - comparison["value"]
-            changed = comparison[comparison["difference"].abs() > 1e-12]
-            st.subheader("Snapshot versus current")
-            if changed.empty:
-                st.info("No later revision changes this selected snapshot.")
-            else:
+            st.write("")
+            col_a, col_b = st.columns([3, 2], gap="large")
+            with col_a:
+                dd = detail.copy()
+                dd["Vintage"] = dd["vintage_date"].dt.date.astype(str)
+                dd["state"] = (
+                    ["first"] + ["current"] * (len(dd) - 1) if len(dd) > 1 else ["current"]
+                )
+                bar = (
+                    alt.Chart(dd)
+                    .mark_bar(size=46, cornerRadiusEnd=3)
+                    .encode(
+                        x=alt.X("Vintage:N", title="Vintage (collection date)", sort=None),
+                        y=alt.Y("value:Q", title="Published value", scale=alt.Scale(zero=False)),
+                        color=alt.Color(
+                            "state:N",
+                            scale=alt.Scale(
+                                domain=["first", "current"],
+                                range=["#9aa7b4", COLORS.get(chosen, "#155EEF")],
+                            ),
+                            legend=alt.Legend(orient="top", title=None),
+                        ),
+                        tooltip=["Vintage", "value", "state"],
+                    )
+                )
+                txt = (
+                    alt.Chart(dd)
+                    .mark_text(dy=-8, fontWeight=600, color=INK)
+                    .encode(
+                        x=alt.X("Vintage:N", sort=None),
+                        y="value:Q",
+                        text=alt.Text("value:Q", format=".2f"),
+                    )
+                )
+                st.altair_chart(
+                    (bar + txt)
+                    .properties(height=320)
+                    .configure_view(stroke=None)
+                    .configure_axis(
+                        labelColor=MUTED, titleColor=MUTED, domainColor=GRID, tickColor=GRID
+                    ),
+                    width="stretch",
+                )
+            with col_b:
+                vtable = detail[["vintage_date", "value", "collected_at"]].copy()
+                vtable["vintage_date"] = vtable["vintage_date"].dt.date
                 st.dataframe(
-                    changed.rename(
+                    vtable.rename(
                         columns={
-                            "reference_date": "Reference date",
-                            "value": "As-of value",
-                            "vintage_date": "As-of vintage",
-                            "current_value": "Current value",
-                            "current_vintage": "Current vintage",
-                            "difference": "Difference",
+                            "vintage_date": "Vintage",
+                            "value": "Value",
+                            "collected_at": "Collected at",
                         }
                     ),
                     hide_index=True,
                     width="stretch",
                 )
+                st.download_button(
+                    "Download vintage history CSV",
+                    _csv_bytes(detail),
+                    "kinea-vintages.csv",
+                    "text/csv",
+                    key="dl_vint",
+                )
 
+    # ---- As-of ------------------------------------------------------------------------
+    with as_of_tab:
+        st.subheader("Point-in-time snapshot (as-of)")
+        st.caption(
+            "Reconstruct what we knew on a chosen date: the latest vintage of each "
+            "observation with `vintage_date ≤ as-of`. Same ROW_NUMBER query as the current view."
+        )
+        vintage_dates = sorted(revision_history["vintage_date"].dropna().dt.date.unique())
+        if not vintage_dates:
+            st.info("No vintage is available for an as-of query yet.")
+            vintage_dates = [date.today()]
+        min_v, max_v = vintage_dates[0], vintage_dates[-1]
+        default_v = min_v if demo_used and min_v < max_v else max_v
+        a1, a2 = st.columns([1, 2])
+        as_of = a1.date_input("Knowledge date", value=default_v, min_value=min_v, max_value=max_v)
+        as_series = a2.selectbox(
+            "Series", revision_metadata["series_id"].tolist(), format_func=_short, key="asof_series"
+        )
+        snap = load_as_of(str(revision_path), revision_mtime, date.isoformat(as_of))
+        snap = snap[snap["series_id"] == as_series]
+        cur_sel = revision_current[revision_current["series_id"] == as_series][
+            ["reference_date", "value", "vintage_date"]
+        ].rename(columns={"value": "current_value", "vintage_date": "current_vintage"})
+        if snap.empty:
+            st.warning("No value had been observed for this series by the selected date.")
+        else:
+            merged = snap[["reference_date", "value", "vintage_date"]].merge(
+                cur_sel, on="reference_date", how="left"
+            )
+            changed = merged[(merged["current_value"] - merged["value"]).abs() > 1e-12]
+            n = len(changed)
+            st.markdown(
+                f'<span class="pill">{n} observation(s) changed since {as_of}</span>',
+                unsafe_allow_html=True,
+            )
+            st.write("")
+            overlay = pd.concat(
+                [
+                    snap[["reference_date", "value"]].assign(series_id="_asof"),
+                    cur_sel.rename(columns={"current_value": "value"})[
+                        ["reference_date", "value"]
+                    ].assign(series_id="_current"),
+                ]
+            )
+            overlay["Snapshot"] = overlay["series_id"].map(
+                {"_asof": f"as-of {as_of}", "_current": "current"}
+            )
+            lines = (
+                alt.Chart(overlay)
+                .mark_line(strokeWidth=2, interpolate="monotone")
+                .encode(
+                    x=alt.X("reference_date:T", title=None, axis=alt.Axis(grid=False)),
+                    y=alt.Y(
+                        "value:Q",
+                        title="Value",
+                        scale=alt.Scale(zero=False),
+                        axis=alt.Axis(grid=True, gridColor=GRID),
+                    ),
+                    color=alt.Color(
+                        "Snapshot:N",
+                        scale=alt.Scale(
+                            domain=[f"as-of {as_of}", "current"],
+                            range=["#9aa7b4", COLORS.get(as_series, "#155EEF")],
+                        ),
+                        legend=alt.Legend(orient="top", title=None),
+                    ),
+                    tooltip=[
+                        "Snapshot",
+                        alt.Tooltip("reference_date:T"),
+                        alt.Tooltip("value:Q", format=".3f"),
+                    ],
+                )
+            )
+            changed_points = overlay[overlay["reference_date"].isin(changed["reference_date"])]
+            points = (
+                alt.Chart(changed_points)
+                .mark_point(size=95, filled=True, stroke="white", strokeWidth=1)
+                .encode(
+                    x="reference_date:T",
+                    y="value:Q",
+                    color=alt.Color(
+                        "Snapshot:N",
+                        scale=alt.Scale(
+                            domain=[f"as-of {as_of}", "current"],
+                            range=["#9aa7b4", COLORS.get(as_series, "#155EEF")],
+                        ),
+                        legend=None,
+                    ),
+                    tooltip=[
+                        "Snapshot",
+                        alt.Tooltip("reference_date:T"),
+                        alt.Tooltip("value:Q", format=".3f"),
+                    ],
+                )
+            )
+            ch = (
+                (lines + points)
+                .properties(height=360)
+                .configure_view(stroke=None)
+                .configure_axis(
+                    labelColor=MUTED, titleColor=MUTED, domainColor=GRID, tickColor=GRID
+                )
+            )
+            st.altair_chart(ch, width="stretch")
+            if not changed.empty:
+                st.dataframe(
+                    changed.assign(difference=lambda d: d["current_value"] - d["value"]).rename(
+                        columns={
+                            "reference_date": "Reference date",
+                            "value": f"Value @ {as_of}",
+                            "vintage_date": "As-of vintage",
+                            "current_value": "Value now",
+                            "current_vintage": "Current vintage",
+                            "difference": "Δ",
+                        }
+                    )[
+                        [
+                            "Reference date",
+                            f"Value @ {as_of}",
+                            "Value now",
+                            "Δ",
+                            "As-of vintage",
+                            "Current vintage",
+                        ]
+                    ],
+                    hide_index=True,
+                    width="stretch",
+                )
+            st.download_button(
+                "Download as-of snapshot CSV",
+                _csv_bytes(snap),
+                f"kinea-as-of-{as_of}.csv",
+                "text/csv",
+                key="dl_asof",
+            )
+
+    # ---- Audit ------------------------------------------------------------------------
     with audit_tab:
-        st.subheader("One row per execution")
-        st.markdown(
-            "A success and an intentionally triggered error are included so reviewers can verify "
-            "that logging also happens when collection fails."
+        st.subheader("Execution log — one row per run")
+        st.caption(
+            "A success and an intentionally triggered error are both present, so a reviewer "
+            "can confirm the collector logs even when it fails (§5.6)."
         )
-        display_logs = logs[["id", "started_at", "finished_at", "status", "log_text"]]
-        st.dataframe(display_logs, hide_index=True, width="stretch")
-        st.download_button(
-            "Download execution logs CSV",
-            _csv_bytes(logs),
-            "kinea-execution-logs.csv",
-            "text/csv",
-            key="download_logs",
+        show = logs.copy()
+        started = pd.to_datetime(show["started_at"], utc=True, errors="coerce")
+        finished = pd.to_datetime(show["finished_at"], utc=True, errors="coerce")
+        show["duration_s"] = (finished - started).dt.total_seconds().round(2)
+        show["started_at"] = started.dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+        show["finished_at"] = finished.dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+        show["status"] = show["status"].str.upper()
+        st.dataframe(
+            show[["id", "started_at", "finished_at", "duration_s", "status", "log_text"]],
+            hide_index=True,
+            width="stretch",
         )
-        errors = logs[logs["status"] == "error"]
-        if not errors.empty:
+        errs = logs[logs["status"] == "error"]
+        if not errs.empty:
             with st.expander("Latest captured traceback"):
-                st.code(errors.iloc[0]["traceback"] or "No traceback")
-        st.subheader("Database audit")
-        a1, a2, a3 = st.columns(3)
-        a1.metric("metadata rows", f"{len(metadata):,}")
-        a2.metric("time_series rows", f"{len(history):,}")
-        a3.metric("log rows", f"{len(logs):,}")
-        st.markdown("**Reproduce the delivery validation**")
+                st.code(errs.iloc[0]["traceback"] or "No traceback")
+        st.write("")
+        b1, b2, b3 = st.columns(3)
+        b1.metric("metadata rows", f"{len(metadata):,}")
+        b2.metric("time_series rows", f"{len(history):,}")
+        b3.metric("log rows", f"{len(logs):,}")
+        st.markdown("**Reproduce end to end**")
         st.code(
             "python -m pytest -q\n"
             "python scripts/generate_evidence.py --mode live\n"
             "python scripts/validate_delivery.py\n"
-            "streamlit run dashboard/app.py"
+            "python -m streamlit run dashboard/app.py"
         )
-        st.caption("Every source URL is preserved in metadata; every execution is recorded in logs.")
+        st.download_button(
+            "Download execution logs CSV",
+            _csv_bytes(logs),
+            "kinea-logs.csv",
+            "text/csv",
+            key="dl_logs",
+        )
 
 
 if __name__ == "__main__":

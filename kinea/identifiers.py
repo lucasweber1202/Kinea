@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-
 _VALID_ID = re.compile(r"^[A-Z0-9]+(?:_[A-Z0-9]+)+$")
 
 COUNTRY_NAMES = {"CZ": "Czechia"}

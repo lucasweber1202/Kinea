@@ -4,7 +4,6 @@ from kinea.db import connect
 from kinea.models import Observation
 from kinea.vintages import ingest_observations
 
-
 SERIES = "CZ_HICP_CORE_INDEX"
 
 
@@ -53,9 +52,9 @@ def test_changed_later_collection_appends_vintage():
     _ingest(conn, 100.0, "2026-02-10")
     counts = _ingest(conn, 101.0, "2026-03-10")
     assert counts.revised == 1
-    assert [row[0] for row in conn.execute(
-        "SELECT value FROM time_series ORDER BY vintage_date"
-    )] == [100.0, 101.0]
+    assert [
+        row[0] for row in conn.execute("SELECT value FROM time_series ORDER BY vintage_date")
+    ] == [100.0, 101.0]
 
 
 def test_later_revision_preserves_entire_old_row():

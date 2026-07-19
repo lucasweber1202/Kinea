@@ -1,5 +1,5 @@
 [PASS] Python version supported - 3.12.13
-[PASS] Required files exist - 32 files
+[PASS] Required files exist - 38 files
 [PASS] Dashboard screenshots are non-empty
 [PASS] Database opens successfully - ok
 [PASS] metadata table exists
@@ -26,6 +26,7 @@
 [PASS] Current view returns revised value
 [PASS] Dashboard reads the mandatory schema
 [PASS] Dashboard exposes all six required sections
+[PASS] Dashboard semantics and exports are review-ready
 [PASS] Live ECB validation passed
 
 DELIVERY STATUS: READY

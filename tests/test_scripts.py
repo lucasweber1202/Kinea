@@ -3,6 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from scripts import generate_evidence
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,3 +40,31 @@ def test_offline_evidence_is_isolated_from_committed_live_database(tmp_path):
     assert (output / "revision_demo.db").exists()
     assert "Status: PENDING" in (output / "live_validation.txt").read_text()
     assert not (output / "validation_report.txt").exists()
+
+
+def test_validated_evidence_promotion_replaces_previous_delivery(tmp_path, monkeypatch):
+    monkeypatch.setattr(generate_evidence, "ROOT", tmp_path)
+    target = tmp_path / "evidence"
+    target.mkdir()
+    (target / "marker.txt").write_text("old", encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "marker.txt").write_text("new", encoding="utf-8")
+
+    generate_evidence._promote_evidence(staged, target)
+
+    assert (target / "marker.txt").read_text(encoding="utf-8") == "new"
+    assert not staged.exists()
+
+
+def test_failed_evidence_promotion_restores_previous_delivery(tmp_path, monkeypatch):
+    monkeypatch.setattr(generate_evidence, "ROOT", tmp_path)
+    target = tmp_path / "evidence"
+    target.mkdir()
+    (target / "marker.txt").write_text("last-known-good", encoding="utf-8")
+    missing_staged = tmp_path / "missing-staged"
+
+    with pytest.raises(FileNotFoundError):
+        generate_evidence._promote_evidence(missing_staged, target)
+
+    assert (target / "marker.txt").read_text(encoding="utf-8") == "last-known-good"

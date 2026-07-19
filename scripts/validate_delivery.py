@@ -12,39 +12,76 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from kinea.client import FetchError, OfflineClient  # noqa: E402
+from kinea.client import OfflineClient  # noqa: E402
 from kinea.collector import collect  # noqa: E402
 from kinea.config import load_config  # noqa: E402
 from kinea.db import connect, get_as_of_view, get_current_view, table_counts  # noqa: E402
 from kinea.identifiers import derive_description, derive_name, parse_series_id  # noqa: E402
 
-
 REQUIRED_COLUMNS = {
     "metadata": [
-        "series_id", "name", "description", "country", "frequency", "unit",
-        "first_observation", "last_observation", "observation_count", "source_url",
-        "last_publish_date", "collected_at",
+        "series_id",
+        "name",
+        "description",
+        "country",
+        "frequency",
+        "unit",
+        "first_observation",
+        "last_observation",
+        "observation_count",
+        "source_url",
+        "last_publish_date",
+        "collected_at",
     ],
     "time_series": ["series_id", "reference_date", "vintage_date", "value", "collected_at"],
     "logs": ["id", "started_at", "finished_at", "status", "log_text", "traceback"],
 }
 EXPECTED_SERIES = {
-    "CZ_HICP_CORE_INDEX", "CZ_HICP_ENERGY_INDEX", "CZ_HICP_FOOD_INDEX",
-    "CZ_HICP_SERVICES_INDEX", "CZ_FX_EURCZK",
+    "CZ_HICP_CORE_INDEX",
+    "CZ_HICP_ENERGY_INDEX",
+    "CZ_HICP_FOOD_INDEX",
+    "CZ_HICP_SERVICES_INDEX",
+    "CZ_FX_EURCZK",
 }
 REQUIRED_FILES = [
-    "README.md", "pyproject.toml", "requirements.txt", "config/series.json",
-    "dashboard/app.py", ".github/workflows/validate.yml", "tests/test_scripts.py",
-    "scripts/generate_evidence.py", "scripts/validate_delivery.py",
-    "kinea/db.py", "kinea/vintages.py", "kinea/collector.py", "kinea/client.py",
-    "kinea/parser.py", "kinea/identifiers.py", "evidence/kinea.db",
-    "evidence/database_counts.txt", "evidence/idempotency.txt",
-    "evidence/revision_demo.txt", "evidence/as_of_demo.txt",
-    "evidence/sample_query.sql", "evidence/sample_query_output.csv",
-    "evidence/success_log.txt", "evidence/error_log.txt",
-    "evidence/live_validation.txt", "evidence/revision_demo.db",
-    "docs/dashboard-overview.png", "docs/dashboard-hicp.png", "docs/dashboard-fx.png",
-    "docs/dashboard-vintages.png", "docs/dashboard-as-of.png", "docs/dashboard-audit.png",
+    "README.md",
+    "DELIVERY.md",
+    "Makefile",
+    "pyproject.toml",
+    "requirements.txt",
+    ".env.example",
+    ".streamlit/config.toml",
+    "config/series.json",
+    "dashboard/app.py",
+    ".github/workflows/validate.yml",
+    "tests/test_scripts.py",
+    "tests/test_dashboard.py",
+    "tests/test_config.py",
+    "scripts/generate_evidence.py",
+    "scripts/validate_delivery.py",
+    "kinea/db.py",
+    "kinea/vintages.py",
+    "kinea/collector.py",
+    "kinea/client.py",
+    "kinea/parser.py",
+    "kinea/identifiers.py",
+    "evidence/kinea.db",
+    "evidence/database_counts.txt",
+    "evidence/idempotency.txt",
+    "evidence/revision_demo.txt",
+    "evidence/as_of_demo.txt",
+    "evidence/sample_query.sql",
+    "evidence/sample_query_output.csv",
+    "evidence/success_log.txt",
+    "evidence/error_log.txt",
+    "evidence/live_validation.txt",
+    "evidence/revision_demo.db",
+    "docs/dashboard-overview.png",
+    "docs/dashboard-hicp.png",
+    "docs/dashboard-fx.png",
+    "docs/dashboard-vintages.png",
+    "docs/dashboard-as-of.png",
+    "docs/dashboard-audit.png",
 ]
 
 
@@ -65,18 +102,31 @@ def _columns(conn: sqlite3.Connection, table: str) -> list[str]:
     return [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
 
 
-def _run_validation() -> Validator:
+def _required_path(relative_path: str, evidence_dir: Path) -> Path:
+    prefix = "evidence/"
+    if relative_path.startswith(prefix):
+        return evidence_dir / relative_path[len(prefix) :]
+    return ROOT / relative_path
+
+
+def _run_validation(evidence_dir: Path) -> Validator:
     result = Validator()
     result.check("Python version supported", sys.version_info >= (3, 11), sys.version.split()[0])
-    missing = [path for path in REQUIRED_FILES if not (ROOT / path).exists()]
-    result.check("Required files exist", not missing, ", ".join(missing) if missing else f"{len(REQUIRED_FILES)} files")
+    missing = [path for path in REQUIRED_FILES if not _required_path(path, evidence_dir).exists()]
+    result.check(
+        "Required files exist",
+        not missing,
+        ", ".join(missing) if missing else f"{len(REQUIRED_FILES)} files",
+    )
     screenshots = [path for path in REQUIRED_FILES if path.startswith("docs/")]
     result.check(
         "Dashboard screenshots are non-empty",
-        all((ROOT / path).exists() and (ROOT / path).stat().st_size > 10_000 for path in screenshots),
+        all(
+            (ROOT / path).exists() and (ROOT / path).stat().st_size > 10_000 for path in screenshots
+        ),
     )
 
-    db_path = ROOT / "evidence" / "kinea.db"
+    db_path = evidence_dir / "kinea.db"
     conn = None
     try:
         conn = sqlite3.connect(db_path)
@@ -88,17 +138,27 @@ def _run_validation() -> Validator:
 
     if conn is not None:
         tables = {
-            row[0] for row in conn.execute(
+            row[0]
+            for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
         }
         for table in ("metadata", "time_series", "logs"):
             result.check(f"{table} table exists", table in tables)
-        result.check("Database contains exactly the mandatory tables", tables == {"metadata", "time_series", "logs"})
-        columns_ok = all(_columns(conn, table) == columns for table, columns in REQUIRED_COLUMNS.items())
+        result.check(
+            "Database contains exactly the mandatory tables",
+            tables == {"metadata", "time_series", "logs"},
+        )
+        columns_ok = all(
+            _columns(conn, table) == columns for table, columns in REQUIRED_COLUMNS.items()
+        )
         result.check("Required columns exist", columns_ok)
-        metadata_pk = {row[1]: row[5] for row in conn.execute("PRAGMA table_info(metadata)") if row[5]}
-        time_series_pk = {row[1]: row[5] for row in conn.execute("PRAGMA table_info(time_series)") if row[5]}
+        metadata_pk = {
+            row[1]: row[5] for row in conn.execute("PRAGMA table_info(metadata)") if row[5]
+        }
+        time_series_pk = {
+            row[1]: row[5] for row in conn.execute("PRAGMA table_info(time_series)") if row[5]
+        }
         logs_pk = {row[1]: row[5] for row in conn.execute("PRAGMA table_info(logs)") if row[5]}
         result.check(
             "Primary keys are correct",
@@ -107,8 +167,12 @@ def _run_validation() -> Validator:
             and logs_pk == {"id": 1},
         )
         series = {row[0] for row in conn.execute("SELECT series_id FROM metadata")}
-        result.check("Five series exist in metadata", series == EXPECTED_SERIES, str(sorted(series)))
-        stored_series = {row[0] for row in conn.execute("SELECT DISTINCT series_id FROM time_series")}
+        result.check(
+            "Five series exist in metadata", series == EXPECTED_SERIES, str(sorted(series))
+        )
+        stored_series = {
+            row[0] for row in conn.execute("SELECT DISTINCT series_id FROM time_series")
+        }
         result.check("Five series exist in time_series", stored_series == EXPECTED_SERIES)
         result.check("Every series_id is parseable", all(parse_series_id(item) for item in series))
         metadata_semantics = True
@@ -142,7 +206,9 @@ def _run_validation() -> Validator:
                 (row["series_id"],),
             ).fetchone()
             metadata_ok &= (
-                row["first_observation"], row["last_observation"], row["observation_count"]
+                row["first_observation"],
+                row["last_observation"],
+                row["observation_count"],
             ) == tuple(actual)
         result.check("Metadata counts match time_series", metadata_ok)
         duplicate_count = conn.execute(
@@ -172,12 +238,17 @@ def _run_validation() -> Validator:
         before = table_counts(offline)
         collect(offline, config, client, collected_at="2026-07-18T11:00:00+00:00")
         after = table_counts(offline)
-        result.check("Second run creates zero metadata rows", after["metadata"] - before["metadata"] == 0)
-        result.check("Second run creates zero vintage rows", after["time_series"] - before["time_series"] == 0)
+        result.check(
+            "Second run creates zero metadata rows", after["metadata"] - before["metadata"] == 0
+        )
+        result.check(
+            "Second run creates zero vintage rows",
+            after["time_series"] - before["time_series"] == 0,
+        )
         result.check("Second run creates exactly one log row", after["logs"] - before["logs"] == 1)
         offline.close()
 
-    demo = connect(ROOT / "evidence" / "revision_demo.db")
+    demo = connect(evidence_dir / "revision_demo.db")
     revised = demo.execute(
         """
         SELECT series_id, reference_date, COUNT(*) n FROM time_series
@@ -194,12 +265,14 @@ def _run_validation() -> Validator:
             (revised["series_id"], revised["reference_date"]),
         ).fetchall()
         old = next(
-            row for row in get_as_of_view(demo, "2026-07-10")
+            row
+            for row in get_as_of_view(demo, "2026-07-10")
             if row["series_id"] == revised["series_id"]
             and row["reference_date"] == revised["reference_date"]
         )
         current = next(
-            row for row in get_current_view(demo)
+            row
+            for row in get_current_view(demo)
             if row["series_id"] == revised["series_id"]
             and row["reference_date"] == revised["reference_date"]
         )
@@ -209,11 +282,23 @@ def _run_validation() -> Validator:
 
     dashboard = (ROOT / "dashboard" / "app.py").read_text(encoding="utf-8")
     mandatory_reads = all(token in dashboard for token in ("metadata", "time_series", "logs"))
-    legacy_absent = all(token not in dashboard for token in ("collection_runs", "is_current", "raw_responses"))
+    legacy_absent = all(
+        token not in dashboard for token in ("collection_runs", "is_current", "raw_responses")
+    )
     result.check("Dashboard reads the mandatory schema", mandatory_reads and legacy_absent)
     sections = ("Overview", "HICP components", "EUR/CZK", "Vintages", "As-of", "Audit")
-    result.check("Dashboard exposes all six required sections", all(section in dashboard for section in sections))
-    live = (ROOT / "evidence" / "live_validation.txt").read_text(encoding="utf-8")
+    result.check(
+        "Dashboard exposes all six required sections",
+        all(section in dashboard for section in sections),
+    )
+    result.check(
+        "Dashboard semantics and exports are review-ready",
+        "Demo revisions" in dashboard
+        and "first observed" in dashboard
+        and "Download as-of snapshot CSV" in dashboard
+        and "use_container_width" not in dashboard,
+    )
+    live = (evidence_dir / "live_validation.txt").read_text(encoding="utf-8")
     result.check(
         "Live ECB validation passed",
         "Status: PASS" in live
@@ -226,17 +311,28 @@ def _run_validation() -> Validator:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--report", default=str(ROOT / "evidence" / "validation_report.txt")
+        "--evidence-dir",
+        default=str(ROOT / "evidence"),
+        help="Evidence directory to validate (defaults to the committed evidence directory)",
+    )
+    parser.add_argument(
+        "--report", help="Report destination (defaults to <evidence-dir>/validation_report.txt)"
     )
     args = parser.parse_args()
+    evidence_dir = Path(args.evidence_dir).expanduser().resolve()
+    report_path = (
+        Path(args.report).expanduser().resolve()
+        if args.report
+        else evidence_dir / "validation_report.txt"
+    )
     try:
-        result = _run_validation()
+        result = _run_validation(evidence_dir)
     except Exception as exc:
         result = Validator()
         result.check("Validator completed without internal error", False, repr(exc))
     status = "READY" if result.failures == 0 else "NOT READY"
     output = "\n".join([*result.lines, "", f"DELIVERY STATUS: {status}", ""])
-    Path(args.report).write_text(output, encoding="utf-8")
+    report_path.write_text(output, encoding="utf-8")
     print(output, end="")
     return 0 if result.failures == 0 else 1
 

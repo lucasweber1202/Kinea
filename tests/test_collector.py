@@ -7,14 +7,15 @@ from kinea.collector import collect
 from kinea.config import load_config
 from kinea.db import connect, table_counts
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_offline_collection_populates_exact_schema():
     conn = connect(":memory:")
     report = collect(
-        conn, load_config(), OfflineClient(ROOT / "fixtures" / "v2"),
+        conn,
+        load_config(),
+        OfflineClient(ROOT / "fixtures" / "v2"),
         collected_at="2026-07-18T10:00:00+00:00",
     )
     assert report.status == "success"
@@ -36,10 +37,18 @@ def test_second_consecutive_run_adds_no_data_rows():
 def test_later_fixture_revision_creates_two_vintages():
     conn = connect(":memory:")
     config = load_config()
-    collect(conn, config, OfflineClient(ROOT / "fixtures" / "v1"),
-            collected_at="2026-07-01T10:00:00+00:00")
-    collect(conn, config, OfflineClient(ROOT / "fixtures" / "v2"),
-            collected_at="2026-07-18T10:00:00+00:00")
+    collect(
+        conn,
+        config,
+        OfflineClient(ROOT / "fixtures" / "v1"),
+        collected_at="2026-07-01T10:00:00+00:00",
+    )
+    collect(
+        conn,
+        config,
+        OfflineClient(ROOT / "fixtures" / "v2"),
+        collected_at="2026-07-18T10:00:00+00:00",
+    )
     count = conn.execute(
         """
         SELECT COUNT(*) FROM time_series
@@ -52,8 +61,12 @@ def test_later_fixture_revision_creates_two_vintages():
 def test_grave_failure_propagates_and_logs_error():
     conn = connect(":memory:")
     with pytest.raises(FetchError):
-        collect(conn, load_config(), OfflineClient(ROOT / "fixtures" / "missing"),
-                collected_at="2026-07-18T10:00:00+00:00")
+        collect(
+            conn,
+            load_config(),
+            OfflineClient(ROOT / "fixtures" / "missing"),
+            collected_at="2026-07-18T10:00:00+00:00",
+        )
     log = conn.execute("SELECT status, traceback FROM logs").fetchone()
     assert log["status"] == "error"
     assert "FetchError" in log["traceback"]
@@ -63,8 +76,12 @@ def test_grave_failure_propagates_and_logs_error():
 def test_failed_execution_writes_exactly_one_complete_log():
     conn = connect(":memory:")
     with pytest.raises(FetchError):
-        collect(conn, load_config(), OfflineClient(ROOT / "fixtures" / "missing"),
-                collected_at="2026-07-18T10:00:00+00:00")
+        collect(
+            conn,
+            load_config(),
+            OfflineClient(ROOT / "fixtures" / "missing"),
+            collected_at="2026-07-18T10:00:00+00:00",
+        )
     rows = conn.execute("SELECT * FROM logs").fetchall()
     assert len(rows) == 1
     row = rows[0]
@@ -76,16 +93,24 @@ def test_failed_execution_writes_exactly_one_complete_log():
 
 def test_every_successful_run_writes_exactly_one_log():
     conn = connect(":memory:")
-    collect(conn, load_config(), OfflineClient(ROOT / "fixtures" / "v1"),
-            collected_at="2026-07-18T10:00:00+00:00")
+    collect(
+        conn,
+        load_config(),
+        OfflineClient(ROOT / "fixtures" / "v1"),
+        collected_at="2026-07-18T10:00:00+00:00",
+    )
     row = conn.execute("SELECT status, traceback FROM logs").fetchone()
     assert tuple(row) == ("success", None)
 
 
 def test_success_log_has_timestamps_and_summary():
     conn = connect(":memory:")
-    collect(conn, load_config(), OfflineClient(ROOT / "fixtures" / "v1"),
-            collected_at="2026-07-18T10:00:00+00:00")
+    collect(
+        conn,
+        load_config(),
+        OfflineClient(ROOT / "fixtures" / "v1"),
+        collected_at="2026-07-18T10:00:00+00:00",
+    )
     row = conn.execute("SELECT * FROM logs").fetchone()
     assert row["started_at"] == "2026-07-18T10:00:00+00:00"
     assert row["finished_at"]
@@ -109,10 +134,12 @@ def test_external_values_are_bound_as_sql_parameters():
             )
 
     conn = connect(":memory:")
-    collect(conn, load_config(), InjectionClient(),
-            collected_at="2026-07-18T10:00:00+00:00")
+    collect(conn, load_config(), InjectionClient(), collected_at="2026-07-18T10:00:00+00:00")
     assert conn.execute("SELECT COUNT(*) FROM metadata").fetchone()[0] == 5
-    assert conn.execute("SELECT DISTINCT source_url FROM metadata").fetchone()[0] == "x'); DROP TABLE metadata; --"
+    assert (
+        conn.execute("SELECT DISTINCT source_url FROM metadata").fetchone()[0]
+        == "x'); DROP TABLE metadata; --"
+    )
 
 
 def test_zero_valid_observations_is_a_grave_failure():

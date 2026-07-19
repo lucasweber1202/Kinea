@@ -12,7 +12,6 @@ from datetime import date
 
 from .models import Observation
 
-
 _MONTH = re.compile(r"^(\d{4})-(\d{2})$")
 _QUARTER = re.compile(r"^(\d{4})-Q([1-4])$")
 
@@ -55,7 +54,9 @@ def parse_sdmx_csv(text: str, *, expected_external_id: str | None = None) -> Par
             if not math.isfinite(value):
                 raise ValueError("non-finite OBS_VALUE")
             if reference_date in parsed:
-                messages.append(f"line {line_number}: duplicate period {reference_date}; last row wins")
+                messages.append(
+                    f"line {line_number}: duplicate period {reference_date}; last row wins"
+                )
             parsed[reference_date] = Observation(reference_date, value)
             for column in ("LAST_UPDATE", "LAST_PUBLISHED", "PUBLICATION_DATE"):
                 raw_date = (row.get(column) or "").strip()

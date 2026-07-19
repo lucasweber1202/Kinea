@@ -29,12 +29,18 @@ def main() -> None:
     )
     observation_date = "2026-06-01"
     ingest_observations(
-        conn, series_id, [Observation(observation_date, 100.0)],
-        vintage_date="2026-07-01", collected_at="2026-07-01T10:00:00+00:00",
+        conn,
+        series_id,
+        [Observation(observation_date, 100.0)],
+        vintage_date="2026-07-01",
+        collected_at="2026-07-01T10:00:00+00:00",
     )
     ingest_observations(
-        conn, series_id, [Observation(observation_date, 101.0)],
-        vintage_date="2026-07-18", collected_at="2026-07-18T10:00:00+00:00",
+        conn,
+        series_id,
+        [Observation(observation_date, 101.0)],
+        vintage_date="2026-07-18",
+        collected_at="2026-07-18T10:00:00+00:00",
     )
     print("Coexisting vintages:")
     for row in conn.execute("SELECT * FROM time_series ORDER BY vintage_date"):

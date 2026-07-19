@@ -1,5 +1,8 @@
 # Kinea Collector — Czech inflation predictors
 
+[![Validate delivery](https://github.com/lucasweber1202/Kinea/actions/workflows/validate.yml/badge.svg)](https://github.com/lucasweber1202/Kinea/actions/workflows/validate.yml)
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-155EEF)
+
 This repository is the complete submission for the Kinea internship assignment. It collects
 four Czech HICP components and EUR/CZK from the European Central Bank, stores the raw published
 levels in the required relational schema, preserves revisions as vintages, supports current and
@@ -8,14 +11,18 @@ historical as-of queries, and presents the result in a Streamlit dashboard.
 The collector in `kinea/` uses only the Python standard library. Dashboard and test dependencies
 are optional extras. No API key or secret is required.
 
+For a compact release checklist and evidence map, see [`DELIVERY.md`](DELIVERY.md).
+
 ## Reviewer quick start
 
 ```bash
 python -m pip install -e ".[dev,dashboard]"
 python -m pytest -q
 python scripts/validate_delivery.py
-streamlit run dashboard/app.py
+python -m streamlit run dashboard/app.py
 ```
+
+After installation, the equivalent one-command verification is `make verify`.
 
 The committed delivery contains a live ECB database and pre-generated evidence, so the validator
 does not need network access. A successful validation prints a `PASS` line for every invariant and
@@ -139,14 +146,26 @@ official value in `kinea.db`.
 ## Dashboard
 
 ```bash
-streamlit run dashboard/app.py
+python -m streamlit run dashboard/app.py
 # Alternative database:
-streamlit run dashboard/app.py -- --db data/kinea.db
+python -m streamlit run dashboard/app.py -- --db data/kinea.db
 ```
+
+In GitHub Codespaces, expose the Streamlit port explicitly if it is not detected automatically:
+
+```bash
+python -m streamlit run dashboard/app.py \
+  --server.address 0.0.0.0 \
+  --server.port 8501
+```
+
+Then open port `8501` from the Codespaces **Ports** panel. Using `python -m streamlit`
+also works when the user-level executable directory is not present in `PATH`.
 
 The six sections are Overview, HICP components, EUR/CZK, Vintages, As-of, and Audit. They expose
 source and coverage, period and component filters, old/current differences, a historical knowledge
-date selector, CSV downloads, collection logs, and reproducibility commands. If the live database
+date selector, frequency-aware freshness, seven CSV downloads, collection logs, and reproducibility
+commands. If the live database
 has no observed revision yet, the Vintages and As-of sections use the explicitly labelled revision
 demo. The section captures below are generated from the same committed databases and mirror the
 content exposed by the application; an automated Streamlit smoke test verifies all six interactive
@@ -213,6 +232,8 @@ tests/                         granular automated test suite
 - SQLite and explicit parameterized SQL keep the artifact portable and directly auditable.
 - A collection is transactional: fatal failure rolls back partial data before the error log is
   written.
+- Live evidence is generated in a staging directory, validated, and only then atomically promoted;
+  a failed refresh cannot destroy the last-known-good delivery.
 - Retroactive collection dates are rejected to avoid inventing historical knowledge.
 - The ECB can revise historical observations without announcing which points changed; therefore a
   bounded `--months` collection only detects revisions inside that window. Run a full collection
@@ -220,4 +241,5 @@ tests/                         granular automated test suite
 - Daily ECB responses can contain blank holiday/weekend records. The parser reports and skips those
   invalid observations while retaining every valid published record.
 - Dashboard and development dependencies are pinned in both `pyproject.toml` and
-  `requirements.txt`; GitHub Actions validates them on Python 3.11.
+  `requirements.txt`; GitHub Actions validates formatting, lint, tests, evidence, and the dashboard
+  contract on Python 3.11 and 3.12.

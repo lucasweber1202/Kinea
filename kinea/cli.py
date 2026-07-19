@@ -8,7 +8,7 @@ from datetime import date
 
 from .collector import build_client, collect
 from .config import load_config
-from .db import AS_OF_QUERY, CURRENT_QUERY, connect, table_counts
+from .db import AS_OF_QUERY, connect, table_counts
 
 
 def _start_period(months: int | None) -> str | None:
@@ -64,8 +64,7 @@ def _print_rows(rows) -> None:
     print("series_id | reference_date | value | vintage_date")
     for row in rows:
         print(
-            f"{row['series_id']} | {row['reference_date']} | "
-            f"{row['value']} | {row['vintage_date']}"
+            f"{row['series_id']} | {row['reference_date']} | {row['value']} | {row['vintage_date']}"
         )
 
 

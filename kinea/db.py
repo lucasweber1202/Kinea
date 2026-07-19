@@ -5,7 +5,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS metadata (
     series_id           VARCHAR(200) NOT NULL,
@@ -102,9 +101,7 @@ def get_current_view(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return current_rows(conn)
 
 
-def get_as_of_view(
-    conn: sqlite3.Connection, as_of_date: str
-) -> list[sqlite3.Row]:
+def get_as_of_view(conn: sqlite3.Connection, as_of_date: str) -> list[sqlite3.Row]:
     """Return the latest vintage known on or before ``as_of_date``."""
 
     return as_of_rows(conn, as_of_date)

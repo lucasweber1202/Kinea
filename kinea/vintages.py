@@ -45,8 +45,13 @@ def ingest_observations(
                        SET value = ?, collected_at = ?
                      WHERE series_id = ? AND reference_date = ? AND vintage_date = ?
                     """,
-                    (observation.value, collected_at, series_id,
-                     observation.reference_date, vintage_date),
+                    (
+                        observation.value,
+                        collected_at,
+                        series_id,
+                        observation.reference_date,
+                        vintage_date,
+                    ),
                 )
                 counts.updated_same_day += 1
             continue
@@ -75,8 +80,7 @@ def ingest_observations(
                 (series_id, reference_date, vintage_date, value, collected_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (series_id, observation.reference_date, vintage_date,
-             observation.value, collected_at),
+            (series_id, observation.reference_date, vintage_date, observation.value, collected_at),
         )
         if latest is None:
             counts.inserted += 1

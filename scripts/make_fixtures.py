@@ -26,15 +26,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FIX = ROOT / "fixtures"
 
-HICP_HEADER = ("KEY,FREQ,REF_AREA,ADJUSTMENT,HICP_ITEM,STS_INSTIT,HICP_SUFFIX,"
-               "TIME_PERIOD,OBS_VALUE,OBS_STATUS,UNIT,TITLE")
-EXR_HEADER = ("KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,"
-              "TIME_PERIOD,OBS_VALUE,OBS_STATUS,UNIT,TITLE")
+HICP_HEADER = (
+    "KEY,FREQ,REF_AREA,ADJUSTMENT,HICP_ITEM,STS_INSTIT,HICP_SUFFIX,"
+    "TIME_PERIOD,OBS_VALUE,OBS_STATUS,UNIT,TITLE"
+)
+EXR_HEADER = (
+    "KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,"
+    "TIME_PERIOD,OBS_VALUE,OBS_STATUS,UNIT,TITLE"
+)
 
 # --- Monthly HICP series ---------------------------------------------------------------
 # (item_code, base_2024_jan, monthly_drift, seasonal_amp, label)
 HICP_SERIES = {
-    "XEF000": (96.4, 0.28, 0.15, "HICP - Czechia - core (excl. energy, food, alcohol & tobacco), 2025=100"),
+    "XEF000": (
+        96.4,
+        0.28,
+        0.15,
+        "HICP - Czechia - core (excl. energy, food, alcohol & tobacco), 2025=100",
+    ),
     "NRGY00": (101.5, 0.10, 1.40, "HICP - Czechia - energy, 2025=100"),
     "FOOD00": (95.8, 0.34, 0.35, "HICP - Czechia - food incl. alcohol & tobacco, 2025=100"),
     "SERV00": (95.1, 0.40, 0.20, "HICP - Czechia - services, 2025=100"),
@@ -75,8 +84,7 @@ def build_hicp(item: str, months: list[date], vintage: str) -> str:
                 val = round(val + (0.21 if item == "XEF000" else 0.95), 2)
         period = f"{mdate.year}-{mdate.month:02d}"
         lines.append(
-            f"{key},M,CZ,N,{item},4D0,INX,{period},{val},{status},"
-            f"Index (2025=100),{title}"
+            f"{key},M,CZ,N,{item},4D0,INX,{period},{val},{status},Index (2025=100),{title}"
         )
     return "\n".join(lines) + "\n"
 
@@ -101,9 +109,7 @@ def build_fx(days: list[date]) -> str:
     for i, d in enumerate(days):
         val = fx_value(i)
         period = d.isoformat()
-        lines.append(
-            f"{key},D,CZK,EUR,SP00,A,{period},{val},A,CZK,{title}"
-        )
+        lines.append(f"{key},D,CZK,EUR,SP00,A,{period},{val},A,CZK,{title}")
     return "\n".join(lines) + "\n"
 
 

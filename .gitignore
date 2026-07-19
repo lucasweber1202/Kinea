@@ -12,8 +12,13 @@ venv/
 !evidence/kinea.db
 !evidence/revision_demo.db
 evidence/offline/
+.evidence-staging-*/
+.evidence-backup-*/
 
 # OS / editor
 .DS_Store
 .idea/
 .vscode/
+
+# Secrets — never versioned (.env.example IS committed)
+.env

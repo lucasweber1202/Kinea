@@ -40,9 +40,7 @@ class LiveClient:
         self.attempts = attempts
         self.backoff_seconds = backoff_seconds
 
-    def fetch(
-        self, spec: SeriesSpec, params: dict[str, str] | None = None
-    ) -> FetchResult:
+    def fetch(self, spec: SeriesSpec, params: dict[str, str] | None = None) -> FetchResult:
         url = spec.request_url(self.config.base_url, params)
         request = urllib.request.Request(
             url,
@@ -71,7 +69,9 @@ class LiveClient:
                 last_error = exc
             if attempt < self.attempts:
                 time.sleep(self.backoff_seconds * (2 ** (attempt - 1)))
-        raise FetchError(f"ECB request failed after {self.attempts} attempts: {url}") from last_error
+        raise FetchError(
+            f"ECB request failed after {self.attempts} attempts: {url}"
+        ) from last_error
 
 
 class OfflineClient:
@@ -80,18 +80,14 @@ class OfflineClient:
     def __init__(self, fixtures_dir: str | Path) -> None:
         self.fixtures_dir = Path(fixtures_dir)
 
-    def fetch(
-        self, spec: SeriesSpec, params: dict[str, str] | None = None
-    ) -> FetchResult:
+    def fetch(self, spec: SeriesSpec, params: dict[str, str] | None = None) -> FetchResult:
         del params
         path = self.fixtures_dir / f"{spec.external_id}.csv"
         if not path.exists():
             raise FetchError(f"fixture not found: {path}")
         return FetchResult(
             body=path.read_text(encoding="utf-8-sig"),
-            source_url=spec.request_url(
-                "https://data-api.ecb.europa.eu/service/data"
-            ),
+            source_url=spec.request_url("https://data-api.ecb.europa.eu/service/data"),
             http_status=200,
             fetched_at=datetime.now(timezone.utc).isoformat(),
         )

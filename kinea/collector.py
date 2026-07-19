@@ -20,9 +20,7 @@ from .vintages import ingest_observations
 class Client(Protocol):
     mode: str
 
-    def fetch(
-        self, spec: SeriesSpec, params: dict[str, str] | None = None
-    ) -> FetchResult: ...
+    def fetch(self, spec: SeriesSpec, params: dict[str, str] | None = None) -> FetchResult: ...
 
 
 @dataclass(frozen=True)
@@ -127,19 +125,11 @@ def collect(
         conn.execute("BEGIN")
         for spec in config.series:
             result = client.fetch(spec, params=params)
-            parsed = parse_sdmx_csv(
-                result.body, expected_external_id=spec.external_id
-            )
-            warning_messages.extend(
-                f"{spec.series_id}: {message}" for message in parsed.warnings
-            )
+            parsed = parse_sdmx_csv(result.body, expected_external_id=spec.external_id)
+            warning_messages.extend(f"{spec.series_id}: {message}" for message in parsed.warnings)
             if not parsed.observations:
-                raise ValueError(
-                    f"{spec.series_id}: response contained zero valid observations"
-                )
-            _ensure_metadata(
-                conn, spec, result.source_url, started, parsed.last_publish_date
-            )
+                raise ValueError(f"{spec.series_id}: response contained zero valid observations")
+            _ensure_metadata(conn, spec, result.source_url, started, parsed.last_publish_date)
             series_counts = ingest_observations(
                 conn,
                 spec.series_id,

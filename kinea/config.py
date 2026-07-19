@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from .identifiers import parse_series_id
-
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "series.json"
 
@@ -51,4 +51,7 @@ def load_config(path: str | Path | None = None) -> Config:
         parse_series_id(item.series_id)
         if not item.external_id.startswith(f"{item.dataflow}."):
             raise ValueError(f"external_id/dataflow mismatch for {item.series_id}")
-    return Config(source=raw["source"], base_url=raw["base_url"], series=series)
+    base_url = os.getenv("KINEA_ECB_BASE_URL", raw["base_url"]).strip()
+    if not base_url.startswith(("https://", "http://")):
+        raise ValueError("base_url must be an absolute HTTP(S) URL")
+    return Config(source=raw["source"], base_url=base_url, series=series)

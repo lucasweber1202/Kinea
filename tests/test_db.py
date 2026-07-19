@@ -9,16 +9,28 @@ def _metadata(conn, series_id="CZ_HICP_CORE_INDEX"):
             observation_count, source_url, collected_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (series_id, "name", "description", "CZ", "monthly", "index", 0,
-         "https://example.test", "2026-01-01T00:00:00+00:00"),
+        (
+            series_id,
+            "name",
+            "description",
+            "CZ",
+            "monthly",
+            "index",
+            0,
+            "https://example.test",
+            "2026-01-01T00:00:00+00:00",
+        ),
     )
 
 
 def test_schema_contains_only_required_tables():
     conn = connect(":memory:")
-    names = {row[0] for row in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-    )}
+    names = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+    }
     assert names == {"metadata", "time_series", "logs"}
 
 
@@ -32,9 +44,18 @@ def test_metadata_has_exact_assignment_columns():
     conn = connect(":memory:")
     columns = [row[1] for row in conn.execute("PRAGMA table_info(metadata)")]
     assert columns == [
-        "series_id", "name", "description", "country", "frequency", "unit",
-        "first_observation", "last_observation", "observation_count", "source_url",
-        "last_publish_date", "collected_at",
+        "series_id",
+        "name",
+        "description",
+        "country",
+        "frequency",
+        "unit",
+        "first_observation",
+        "last_observation",
+        "observation_count",
+        "source_url",
+        "last_publish_date",
+        "collected_at",
     ]
 
 
@@ -61,6 +82,7 @@ def test_current_query_selects_latest_vintage():
         ],
     )
     from kinea.db import CURRENT_QUERY
+
     row = conn.execute(CURRENT_QUERY).fetchone()
     assert (row["value"], row["vintage_date"]) == (101.0, "2026-03-01")
 
