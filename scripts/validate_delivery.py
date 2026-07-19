@@ -17,6 +17,7 @@ from kinea.collector import collect  # noqa: E402
 from kinea.config import load_config  # noqa: E402
 from kinea.db import connect, get_as_of_view, get_current_view, table_counts  # noqa: E402
 from kinea.identifiers import derive_description, derive_name, parse_series_id  # noqa: E402
+from kinea.panels import as_of_panel  # noqa: E402
 
 REQUIRED_COLUMNS = {
     "metadata": [
@@ -54,22 +55,38 @@ REQUIRED_FILES = [
     "config/series.json",
     "dashboard/app.py",
     ".github/workflows/validate.yml",
+    ".github/workflows/source-contract.yml",
+    "fixtures/contracts/EXR.D.CZK.EUR.SP00.A.csv",
+    "fixtures/contracts/HICP.M.CZ.N.XEF000.4D0.INX.csv",
+    "fixtures/contracts/HICP.M.CZ.N.NRGY00.4D0.INX.csv",
+    "fixtures/contracts/HICP.M.CZ.N.FOOD00.4D0.INX.csv",
+    "fixtures/contracts/HICP.M.CZ.N.SERV00.4D0.INX.csv",
+    "tests/test_contracts.py",
+    "tests/test_panels.py",
+    "tests/test_quality.py",
+    "tests/test_vintages_properties.py",
     "tests/test_scripts.py",
     "tests/test_dashboard.py",
     "tests/test_config.py",
     "scripts/generate_evidence.py",
+    "scripts/check_source_contract.py",
     "scripts/validate_delivery.py",
     "kinea/db.py",
     "kinea/vintages.py",
+    "kinea/panels.py",
+    "kinea/quality.py",
     "kinea/collector.py",
     "kinea/client.py",
     "kinea/parser.py",
     "kinea/identifiers.py",
     "evidence/kinea.db",
     "evidence/database_counts.txt",
+    "evidence/data_quality.txt",
     "evidence/idempotency.txt",
     "evidence/revision_demo.txt",
     "evidence/as_of_demo.txt",
+    "evidence/pit_panel.csv",
+    "evidence/pit_panel.parquet",
     "evidence/sample_query.sql",
     "evidence/sample_query_output.csv",
     "evidence/success_log.txt",
@@ -278,7 +295,29 @@ def _run_validation(evidence_dir: Path) -> Validator:
         )
         result.check("Historical as-of returns old value", old["value"] == history[0]["value"])
         result.check("Current view returns revised value", current["value"] == history[1]["value"])
+        panel = as_of_panel(
+            demo,
+            ["2026-07-10", "2026-07-18"],
+            series_ids=[revised["series_id"]],
+        )
+        panel_values = [
+            row.value for row in panel if row.reference_date == revised["reference_date"]
+        ]
+        result.check(
+            "Point-in-time panel contains no look-ahead",
+            panel_values == [history[0]["value"], history[1]["value"]]
+            and all(row.vintage_date <= row.knowledge_date for row in panel),
+        )
     demo.close()
+
+    pit_csv = (evidence_dir / "pit_panel.csv").read_text(encoding="utf-8")
+    result.check(
+        "Modeling panel artifacts are populated",
+        "knowledge_date,series_id,reference_date,value,vintage_date,collected_at" in pit_csv
+        and "2026-07-10" in pit_csv
+        and "2026-07-18" in pit_csv
+        and (evidence_dir / "pit_panel.parquet").stat().st_size > 0,
+    )
 
     dashboard = (ROOT / "dashboard" / "app.py").read_text(encoding="utf-8")
     mandatory_reads = all(token in dashboard for token in ("metadata", "time_series", "logs"))
@@ -304,6 +343,11 @@ def _run_validation(evidence_dir: Path) -> Validator:
         "Status: PASS" in live
         and "HTTP status: 200" in live
         and "live_series_matches: 5/5" in live,
+    )
+    quality = (evidence_dir / "data_quality.txt").read_text(encoding="utf-8")
+    result.check(
+        "Semantic data-quality gate passed",
+        "Status: PASS" in quality and "RESULT: PASS" in quality,
     )
     return result
 

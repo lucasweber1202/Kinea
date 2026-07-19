@@ -22,7 +22,9 @@ from kinea.collector import collect  # noqa: E402
 from kinea.config import load_config  # noqa: E402
 from kinea.db import AS_OF_QUERY, CURRENT_QUERY, SCHEMA_SQL, connect, table_counts  # noqa: E402
 from kinea.models import Observation  # noqa: E402
+from kinea.panels import as_of_panel, write_panel  # noqa: E402
 from kinea.parser import parse_sdmx_csv  # noqa: E402
+from kinea.quality import evaluate_database, format_quality_report  # noqa: E402
 from kinea.vintages import ingest_observations  # noqa: E402
 
 EVIDENCE = ROOT / "evidence"
@@ -390,6 +392,13 @@ def main() -> None:
             ]
         ),
     )
+    panel_rows = as_of_panel(
+        demo,
+        ["2026-07-10", "2026-07-18"],
+        series_ids=["CZ_HICP_CORE_INDEX"],
+    )
+    write_panel(panel_rows, EVIDENCE / "pit_panel.csv", "csv")
+    write_panel(panel_rows, EVIDENCE / "pit_panel.parquet", "parquet")
     demo.close()
 
     _write("sample_query.sql", SAMPLE_QUERY)
@@ -507,6 +516,13 @@ This isolated database was built from deterministic SDMX-CSV fixtures.
 Run: python scripts/generate_evidence.py --mode live
 """
     _write("live_validation.txt", live_text)
+    quality_as_of = conn.execute("SELECT MAX(vintage_date) FROM time_series").fetchone()[0]
+    quality_reports = evaluate_database(conn, config, as_of=quality_as_of)
+    quality_text = format_quality_report(quality_reports, as_of=quality_as_of)
+    _write("data_quality.txt", quality_text)
+    if any(not report.passed for report in quality_reports):
+        raise RuntimeError("generated database failed the semantic data-quality gate")
+    conn.execute("VACUUM")
     conn.close()
     if atomic_live:
         subprocess.run(

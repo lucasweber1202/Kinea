@@ -4,9 +4,23 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date, datetime
+from math import isclose
 from typing import Iterable
 
 from .models import IngestCounts, Observation
+
+VALUE_REL_TOLERANCE = 1e-12
+VALUE_ABS_TOLERANCE = 1e-12
+
+
+def values_equal(left: float, right: float) -> bool:
+    """Ignore serialization noise while retaining economically meaningful revisions."""
+    return isclose(
+        float(left),
+        float(right),
+        rel_tol=VALUE_REL_TOLERANCE,
+        abs_tol=VALUE_ABS_TOLERANCE,
+    )
 
 
 def ingest_observations(
@@ -36,7 +50,7 @@ def ingest_observations(
         ).fetchone()
 
         if same_day is not None:
-            if float(same_day["value"]) == observation.value:
+            if values_equal(float(same_day["value"]), observation.value):
                 counts.unchanged += 1
             else:
                 conn.execute(
@@ -70,7 +84,7 @@ def ingest_observations(
             raise ValueError(
                 "non-monotonic vintage_date: historical knowledge cannot be backfilled"
             )
-        if latest is not None and float(latest["value"]) == observation.value:
+        if latest is not None and values_equal(float(latest["value"]), observation.value):
             counts.unchanged += 1
             continue
 

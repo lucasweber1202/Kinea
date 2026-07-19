@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install pinned dependencies
-        run: python -m pip install -e ".[dev,dashboard]"
+        run: python -m pip install -e ".[dev,dashboard,modeling]"
       - name: Check formatting and lint
         run: |
           python -m ruff format --check .

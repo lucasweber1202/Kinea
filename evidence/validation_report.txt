@@ -1,5 +1,5 @@
 [PASS] Python version supported - 3.12.13
-[PASS] Required files exist - 38 files
+[PASS] Required files exist - 54 files
 [PASS] Dashboard screenshots are non-empty
 [PASS] Database opens successfully - ok
 [PASS] metadata table exists
@@ -24,9 +24,12 @@
 [PASS] Revision demonstration contains two vintages
 [PASS] Historical as-of returns old value
 [PASS] Current view returns revised value
+[PASS] Point-in-time panel contains no look-ahead
+[PASS] Modeling panel artifacts are populated
 [PASS] Dashboard reads the mandatory schema
 [PASS] Dashboard exposes all six required sections
 [PASS] Dashboard semantics and exports are review-ready
 [PASS] Live ECB validation passed
+[PASS] Semantic data-quality gate passed
 
 DELIVERY STATUS: READY

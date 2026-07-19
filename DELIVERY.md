@@ -1,13 +1,13 @@
 # Delivery handoff
 
 This repository is the review-ready submission for the Kinea internship data-collector
-assignment. Release tag `v1.0.0` identifies the delivered source tree; `SHA256SUMS` distributed
+assignment. Release tag `v1.1.0` identifies the delivered source tree; `SHA256SUMS` distributed
 with the release verifies the downloadable ZIP and Git bundle.
 
 ## Five-minute review
 
 ```bash
-python -m pip install -e ".[dev,dashboard]"
+python -m pip install -e ".[dev,dashboard,modeling]"
 python -m pytest -q
 python scripts/validate_delivery.py
 python -m streamlit run dashboard/app.py
@@ -24,9 +24,14 @@ network-independent.
 - Live evidence: 5 series and 8,327 current observations, with all five latest samples matched
   against raw ECB responses.
 - Vintage behavior: first observation, unchanged re-run, later revision, and same-day correction.
+- Modeling interface: CSV/Parquet/Feather point-in-time panels with explicit knowledge dates and
+  a validator-backed no-look-ahead demonstration.
+- Data trust: pre-ingest range, cadence, jump, future-date, and staleness checks with a committed
+  report and run-level quality status.
+- Source drift protection: five real ECB golden fixtures plus a separately scheduled live contract.
 - Presentation: six Streamlit sections, seven CSV exports, source coverage, vintages, as-of view,
   and execution audit.
-- Automated quality gate: 58 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
+- Automated quality gate: 75 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
   fail-closed delivery validator.
 
 ## Evidence map
@@ -38,8 +43,10 @@ network-independent.
 | Idempotency | `evidence/idempotency.txt` |
 | Two coexisting vintages | `evidence/revision_demo.db`, `evidence/revision_demo.txt` |
 | Historical as-of result | `evidence/as_of_demo.txt` |
+| Backtest-ready PIT panel | `evidence/pit_panel.csv`, `evidence/pit_panel.parquet` |
 | Success and error logging | `evidence/success_log.txt`, `evidence/error_log.txt` |
 | Live source comparison | `evidence/live_validation.txt` |
+| Semantic data quality | `evidence/data_quality.txt` |
 | Automated final audit | `evidence/validation_report.txt` |
 | Presentation captures | `docs/dashboard-*.png` |
 
@@ -52,7 +59,9 @@ network-independent.
 - Secrets are not required. `.env` is ignored; `.env.example` documents the optional endpoint
   override.
 - GitHub Actions tests Python 3.11 and 3.12, checks formatting and lint, runs the dashboard
-  contract, and validates committed evidence.
+  contract, property-based invariants, and validates committed evidence.
+- A weekly opt-in network job detects external-ID or SDMX-column drift without making ordinary
+  pull requests depend on ECB availability.
 
 ## Known limitation
 
@@ -69,5 +78,9 @@ changes official values in `evidence/kinea.db`.
 - [x] Success and error logs
 - [x] Live populated database and raw-response comparison
 - [x] Dashboard, downloads, and screenshots
+- [x] Point-in-time panel export for honest backtests
+- [x] Semantic quality gate and report
+- [x] Golden and scheduled live source contracts
+- [x] Property-based vintage invariants and float-noise tolerance
 - [x] Automated tests and fail-closed delivery validator
 - [x] Reproducible ZIP, Git bundle, checksums, and GitHub tag

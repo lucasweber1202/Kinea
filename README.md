@@ -16,7 +16,7 @@ For a compact release checklist and evidence map, see [`DELIVERY.md`](DELIVERY.m
 ## Reviewer quick start
 
 ```bash
-python -m pip install -e ".[dev,dashboard]"
+python -m pip install -e ".[dev,dashboard,modeling]"
 python -m pytest -q
 python scripts/validate_delivery.py
 python -m streamlit run dashboard/app.py
@@ -36,6 +36,9 @@ ends with `DELIVERY STATUS: READY`.
 | SDMX-CSV parsing and record-level warnings | `kinea/parser.py` |
 | Guaranteed final execution log | `kinea/collector.py` |
 | Current and as-of queries | `kinea/db.py`, `kinea/cli.py` |
+| Look-ahead-free modeling panels | `kinea/panels.py`, `evidence/pit_panel.parquet` |
+| Semantic data-quality gate | `kinea/quality.py`, `evidence/data_quality.txt` |
+| Recorded/live ECB contracts | `fixtures/contracts/`, `.github/workflows/source-contract.yml` |
 | Live populated SQLite database | `evidence/kinea.db` |
 | Labelled revision demonstration | `evidence/revision_demo.db` |
 | Fail-closed delivery audit | `scripts/validate_delivery.py` |
@@ -71,7 +74,7 @@ Python 3.11 or newer is required.
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-python -m pip install -e ".[dev,dashboard]"
+python -m pip install -e ".[dev,dashboard,modeling]"
 ```
 
 ## Collection
@@ -96,6 +99,12 @@ with zero valid observations is treated as a grave extraction failure. Fatal fai
 after the transaction is rolled back, and the `finally` path still writes one complete `error` row
 with timestamps, context, and traceback.
 
+Before ingest, the collector applies per-series semantic policies from `config/series.json`:
+plausible ranges, maximum point-to-point changes, missing monthly periods or excessive daily gaps,
+future dates, and frequency-aware staleness. Errors fail the transaction; staleness is a visible
+warning because publication calendars and holidays can legitimately delay a fresh observation.
+The final execution log records `quality`, `quality_issues`, and ordinary parser warnings.
+
 ### Deterministic offline reproduction
 
 ```bash
@@ -107,6 +116,43 @@ python -m kinea.cli collect --mode offline --fixtures fixtures/v2 --db /tmp/kine
 `fixtures/v1` and `fixtures/v2` are clearly synthetic SDMX-CSV fixtures. Version 2 adds observations
 and revises existing values; the third run proves idempotency. They exercise the same parser,
 collector, schema, and vintage logic as live mode, but are not presented as real ECB data.
+
+### Point-in-time panels for backtests
+
+Export a long-form panel for explicit knowledge dates. Each row retains both the reference date and
+the vintage actually available at that knowledge date, so later revisions cannot leak backwards:
+
+```bash
+python -m kinea.cli panel --db evidence/revision_demo.db \
+  --as-of 2026-07-10,2026-07-18 \
+  --series CZ_HICP_CORE_INDEX \
+  --format parquet --output /tmp/kinea-pit-panel.parquet
+```
+
+Or build an inclusive daily, weekly, or monthly knowledge-date grid:
+
+```bash
+python -m kinea.cli panel --db evidence/kinea.db \
+  --start 2025-01-31 --end 2026-06-30 --frequency monthly \
+  --format feather --output /tmp/kinea-monthly-panel.feather
+```
+
+CSV uses the standard library. Parquet and Feather require the `modeling` extra. The stable schema
+is `knowledge_date, series_id, reference_date, value, vintage_date, collected_at`. The reusable
+Python API is `kinea.panels.as_of_panel()`.
+
+### Source-contract protection
+
+`fixtures/contracts/` contains small, real ECB SDMX-CSV responses used as golden parser tests. The
+deterministic CI runs these fixtures and property-based vintage invariants on every change. A
+separate networked workflow runs weekly (and manually) to ensure all five external IDs still
+resolve, required columns remain present, parsing succeeds, and the latest sample passes semantic
+quality checks:
+
+```bash
+python scripts/check_source_contract.py
+# or: make contract-live
+```
 
 ## Evidence and validation
 
@@ -135,6 +181,8 @@ The evidence directory includes:
 - `idempotency.txt` — live and deterministic offline first/second runs, exact deltas, and `PASS`;
 - `revision_demo.txt` and `revision_demo.db` — two coexisting simulated vintages;
 - `as_of_demo.txt` — old as-of value versus revised current value;
+- `pit_panel.csv` and `pit_panel.parquet` — two-date, no-look-ahead modeling export;
+- `data_quality.txt` — per-series semantic status, issues, and final gate result;
 - `sample_query.sql` and `sample_query_output.csv` — reproducible SQL result;
 - `success_log.txt` and `error_log.txt` — complete examples of both outcomes;
 - `live_validation.txt` — ECB host checks and raw-response comparisons for all five series;
@@ -216,20 +264,25 @@ kinea/db.py                    exact DDL and current/as-of queries
 kinea/identifiers.py           structured-ID parser and derived metadata
 kinea/client.py                HTTP retry/backoff and offline fixtures
 kinea/parser.py                robust SDMX-CSV parser
-kinea/vintages.py              revision and idempotency rules
+kinea/vintages.py              revision rules with float-noise tolerance
+kinea/panels.py                point-in-time CSV/Parquet/Feather exports
+kinea/quality.py               range, cadence, jump, future-date, and staleness checks
 kinea/collector.py             transactional collection and final logging
-kinea/cli.py                   collect, status, as-of, and vintages commands
+kinea/cli.py                   collect, status, as-of, vintages, and panel commands
 dashboard/app.py               six-section Streamlit presentation
-fixtures/v1, fixtures/v2       deterministic synthetic fixtures
+fixtures/v1, fixtures/v2       deterministic synthetic collection fixtures
+fixtures/contracts/            recorded real ECB contract fixtures
 scripts/                       evidence, revision demo, previews, validation
 evidence/                      live database and review-ready proof files
 tests/                         granular automated test suite
-.github/workflows/validate.yml CI tests, evidence validation, and dashboard smoke test
+.github/workflows/             deterministic validation plus scheduled source contract
 ```
 
 ## Engineering choices and limitations
 
 - SQLite and explicit parameterized SQL keep the artifact portable and directly auditable.
+- The two text/composite-key tables use SQLite `WITHOUT ROWID`, avoiding a duplicate hidden B-tree
+  while preserving the exact required columns and primary keys.
 - A collection is transactional: fatal failure rolls back partial data before the error log is
   written.
 - Live evidence is generated in a staging directory, validated, and only then atomically promoted;
@@ -240,6 +293,9 @@ tests/                         granular automated test suite
   when complete revision discovery matters.
 - Daily ECB responses can contain blank holiday/weekend records. The parser reports and skips those
   invalid observations while retaining every valid published record.
+- Value equality uses a tight `1e-12` relative/absolute tolerance so harmless binary serialization
+  noise does not create a false revision while meaningful changes remain versioned.
 - Dashboard and development dependencies are pinned in both `pyproject.toml` and
-  `requirements.txt`; GitHub Actions validates formatting, lint, tests, evidence, and the dashboard
-  contract on Python 3.11 and 3.12.
+  `requirements.txt`; GitHub Actions validates formatting, lint, tests, evidence, the dashboard
+  contract, and property-based vintage invariants on Python 3.11 and 3.12. The weekly source check
+  is separate so a transient ECB outage does not make deterministic pull requests nondeterministic.

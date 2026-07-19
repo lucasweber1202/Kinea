@@ -8,7 +8,12 @@
       "dataflow": "EXR",
       "sdmx_key": "D.CZK.EUR.SP00.A",
       "frequency": "daily",
-      "unit": "currency"
+      "unit": "currency",
+      "min_value": 10.0,
+      "max_value": 50.0,
+      "max_change_pct": 15.0,
+      "max_gap_days": 10,
+      "stale_after_days": 7
     },
     {
       "series_id": "CZ_HICP_CORE_INDEX",
@@ -16,7 +21,11 @@
       "dataflow": "HICP",
       "sdmx_key": "M.CZ.N.XEF000.4D0.INX",
       "frequency": "monthly",
-      "unit": "index"
+      "unit": "index",
+      "min_value": 20.0,
+      "max_value": 300.0,
+      "max_change_pct": 45.0,
+      "stale_after_days": 75
     },
     {
       "series_id": "CZ_HICP_ENERGY_INDEX",
@@ -24,7 +33,11 @@
       "dataflow": "HICP",
       "sdmx_key": "M.CZ.N.NRGY00.4D0.INX",
       "frequency": "monthly",
-      "unit": "index"
+      "unit": "index",
+      "min_value": 20.0,
+      "max_value": 300.0,
+      "max_change_pct": 45.0,
+      "stale_after_days": 75
     },
     {
       "series_id": "CZ_HICP_FOOD_INDEX",
@@ -32,7 +45,11 @@
       "dataflow": "HICP",
       "sdmx_key": "M.CZ.N.FOOD00.4D0.INX",
       "frequency": "monthly",
-      "unit": "index"
+      "unit": "index",
+      "min_value": 20.0,
+      "max_value": 300.0,
+      "max_change_pct": 45.0,
+      "stale_after_days": 75
     },
     {
       "series_id": "CZ_HICP_SERVICES_INDEX",
@@ -40,7 +57,11 @@
       "dataflow": "HICP",
       "sdmx_key": "M.CZ.N.SERV00.4D0.INX",
       "frequency": "monthly",
-      "unit": "index"
+      "unit": "index",
+      "min_value": 20.0,
+      "max_value": 300.0,
+      "max_change_pct": 45.0,
+      "stale_after_days": 75
     }
   ]
 }

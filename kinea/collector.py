@@ -12,8 +12,9 @@ from .client import FetchResult, LiveClient, OfflineClient
 from .config import Config, SeriesSpec
 from .db import create_schema
 from .identifiers import derive_description, derive_name, parse_series_id
-from .models import IngestCounts
+from .models import IngestCounts, Observation
 from .parser import parse_sdmx_csv
+from .quality import DataQualityError, QualityReport, evaluate_observations
 from .vintages import ingest_observations
 
 
@@ -29,6 +30,7 @@ class CollectReport:
     counts: IngestCounts
     series_collected: int
     warnings: tuple[str, ...]
+    quality_reports: tuple[QualityReport, ...]
     log_text: str
 
 
@@ -100,6 +102,32 @@ def _refresh_metadata(conn: sqlite3.Connection, series_id: str) -> None:
     )
 
 
+def _previous_observation(
+    conn: sqlite3.Connection, series_id: str, before: str
+) -> tuple[str, float] | None:
+    row = conn.execute(
+        """
+        SELECT reference_date, value
+        FROM (
+            SELECT t.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY reference_date
+                       ORDER BY vintage_date DESC, collected_at DESC
+                   ) AS rn
+            FROM time_series t
+            WHERE series_id = ? AND reference_date < ?
+        ) ranked
+        WHERE rn = 1
+        ORDER BY reference_date DESC
+        LIMIT 1
+        """,
+        (series_id, before),
+    ).fetchone()
+    if row is None:
+        return None
+    return row["reference_date"], float(row["value"])
+
+
 def collect(
     conn: sqlite3.Connection,
     config: Config,
@@ -116,6 +144,7 @@ def collect(
     vintage = vintage_date or started[:10]
     counts = IngestCounts()
     warning_messages: list[str] = []
+    quality_reports: list[QualityReport] = []
     series_collected = 0
     status = "error"
     log_text = "collection failed before completion"
@@ -127,8 +156,29 @@ def collect(
             result = client.fetch(spec, params=params)
             parsed = parse_sdmx_csv(result.body, expected_external_id=spec.external_id)
             warning_messages.extend(f"{spec.series_id}: {message}" for message in parsed.warnings)
-            if not parsed.observations:
-                raise ValueError(f"{spec.series_id}: response contained zero valid observations")
+            previous_row = (
+                None
+                if not parsed.observations
+                else _previous_observation(
+                    conn, spec.series_id, parsed.observations[0].reference_date
+                )
+            )
+            previous = None if previous_row is None else Observation(*previous_row)
+            quality = evaluate_observations(
+                spec,
+                parsed.observations,
+                as_of=vintage,
+                previous=previous,
+            )
+            quality_reports.append(quality)
+            warning_messages.extend(
+                f"{spec.series_id}: quality {issue.code}: {issue.message}"
+                for issue in quality.issues
+                if issue.severity == "warning"
+            )
+            if not quality.passed:
+                details = "; ".join(f"{issue.code}: {issue.message}" for issue in quality.issues)
+                raise DataQualityError(f"{spec.series_id}: semantic quality gate failed: {details}")
             _ensure_metadata(conn, spec, result.source_url, started, parsed.last_publish_date)
             series_counts = ingest_observations(
                 conn,
@@ -142,23 +192,32 @@ def collect(
             series_collected += 1
         conn.commit()
         status = "success"
+        quality_issue_count = sum(len(report.issues) for report in quality_reports)
+        quality_status = "warning" if quality_issue_count else "pass"
         log_text = (
             f"mode={client.mode}; series={series_collected}; seen={counts.seen}; "
             f"inserted={counts.inserted}; revised={counts.revised}; "
             f"updated_same_day={counts.updated_same_day}; unchanged={counts.unchanged}; "
-            f"warnings={len(warning_messages)}"
+            f"warnings={len(warning_messages)}; quality={quality_status}; "
+            f"quality_issues={quality_issue_count}"
         )
         return CollectReport(
             status=status,
             counts=counts,
             series_collected=series_collected,
             warnings=tuple(warning_messages),
+            quality_reports=tuple(quality_reports),
             log_text=log_text,
         )
-    except Exception:
+    except Exception as exc:
         conn.rollback()
         traceback_text = traceback_module.format_exc()
-        log_text = f"mode={client.mode}; collection aborted after {series_collected} series"
+        quality_issue_count = sum(len(report.issues) for report in quality_reports)
+        quality_status = "error" if isinstance(exc, DataQualityError) else "not_run"
+        log_text = (
+            f"mode={client.mode}; collection aborted after {series_collected} series; "
+            f"quality={quality_status}; quality_issues={quality_issue_count}"
+        )
         raise
     finally:
         finished = datetime.now(timezone.utc).isoformat()

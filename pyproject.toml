@@ -8,7 +8,13 @@ dependencies = []
 
 [project.optional-dependencies]
 dashboard = ["streamlit==1.59.2", "altair==6.2.2", "pandas==3.0.3"]
-dev = ["pytest==9.1.1", "matplotlib==3.10.8", "ruff==0.15.22"]
+modeling = ["pandas==3.0.3", "pyarrow==24.0.0"]
+dev = [
+    "pytest==9.1.1",
+    "matplotlib==3.10.8",
+    "ruff==0.15.22",
+    "hypothesis==6.156.9",
+]
 
 [project.scripts]
 kinea = "kinea.cli:main"

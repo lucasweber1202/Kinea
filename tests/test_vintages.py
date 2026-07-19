@@ -84,6 +84,25 @@ def test_unchanged_same_day_does_not_touch_collected_at():
     assert timestamp == "2026-02-10T09:00:00+00:00"
 
 
+def test_float_serialization_noise_does_not_create_false_revision():
+    conn = _conn()
+    _ingest(conn, 100.0, "2026-02-10")
+
+    counts = _ingest(conn, 100.0 + 1e-13, "2026-03-10")
+
+    assert counts.unchanged == 1
+    assert conn.execute("SELECT COUNT(*) FROM time_series").fetchone()[0] == 1
+
+
+def test_economically_meaningful_float_change_still_creates_revision():
+    conn = _conn()
+    _ingest(conn, 100.0, "2026-02-10")
+
+    counts = _ingest(conn, 100.0001, "2026-03-10")
+
+    assert counts.revised == 1
+
+
 def test_rejects_non_monotonic_vintage_backfill():
     conn = _conn()
     _ingest(conn, 101.0, "2026-03-10")

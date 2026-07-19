@@ -4,8 +4,8 @@ Status: PASS
 data-api.ecb.europa.eu HTTP status: 200
 data.ecb.europa.eu HTTP status: 200
 HTTP status: 200 for both required ECB hosts
-First collection: mode=live; series=5; seen=8327; inserted=8327; revised=0; updated_same_day=0; unchanged=0; warnings=62
-Immediate repeat: mode=live; series=5; seen=8327; inserted=0; revised=0; updated_same_day=0; unchanged=8327; warnings=62
+First collection: mode=live; series=5; seen=8327; inserted=8327; revised=0; updated_same_day=0; unchanged=0; warnings=62; quality=pass; quality_issues=0
+Immediate repeat: mode=live; series=5; seen=8327; inserted=0; revised=0; updated_same_day=0; unchanged=8327; warnings=62; quality=pass; quality_issues=0
 
 series_id | observation_count | first_observation | last_observation
 --- | --- | --- | ---

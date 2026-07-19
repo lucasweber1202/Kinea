@@ -9,6 +9,7 @@ from datetime import date
 from .collector import build_client, collect
 from .config import load_config
 from .db import AS_OF_QUERY, connect, table_counts
+from .panels import as_of_panel, knowledge_date_grid, write_panel
 
 
 def _start_period(months: int | None) -> str | None:
@@ -94,6 +95,32 @@ def _cmd_vintages(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_panel(args: argparse.Namespace) -> int:
+    try:
+        if args.as_of:
+            if args.start or args.end:
+                raise ValueError("use either --as-of or --start/--end, not both")
+            dates = tuple(item for group in args.as_of for item in group.split(",") if item)
+        else:
+            if not args.start or not args.end:
+                raise ValueError("panel export requires --as-of or both --start and --end")
+            dates = knowledge_date_grid(args.start, args.end, args.frequency)
+        conn = connect(args.db)
+        try:
+            rows = as_of_panel(conn, dates, series_ids=args.series)
+        finally:
+            conn.close()
+        destination = write_panel(rows, args.output, args.format)
+    except (RuntimeError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"Point-in-time panel: {len(rows)} rows; {len(set(row.knowledge_date for row in rows))} "
+        f"knowledge dates; output={destination}"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kinea")
     parser.add_argument("--config", default=None)
@@ -121,6 +148,23 @@ def main(argv: list[str] | None = None) -> int:
     vintage_parser.add_argument("--series", required=True)
     vintage_parser.add_argument("--reference-date", required=True)
     vintage_parser.set_defaults(func=_cmd_vintages)
+
+    panel_parser = sub.add_parser("panel", help="Export a look-ahead-free point-in-time panel")
+    panel_parser.add_argument("--db", required=True)
+    panel_parser.add_argument(
+        "--as-of",
+        action="append",
+        help="Knowledge date; repeat or pass comma-separated dates",
+    )
+    panel_parser.add_argument("--start", help="Inclusive grid start date")
+    panel_parser.add_argument("--end", help="Inclusive grid end date")
+    panel_parser.add_argument(
+        "--frequency", choices=("daily", "weekly", "monthly"), default="monthly"
+    )
+    panel_parser.add_argument("--series", action="append", help="Optional series filter")
+    panel_parser.add_argument("--output", required=True)
+    panel_parser.add_argument("--format", choices=("csv", "parquet", "feather"), default="csv")
+    panel_parser.set_defaults(func=_cmd_panel)
 
     args = parser.parse_args(argv)
     return args.func(args)

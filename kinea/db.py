@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS metadata (
     last_publish_date   DATE,
     collected_at        TIMESTAMP NOT NULL,
     CONSTRAINT pk_metadata PRIMARY KEY (series_id)
-);
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS time_series (
     series_id       VARCHAR(200) NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS time_series (
     CONSTRAINT pk_time_series PRIMARY KEY (series_id, reference_date, vintage_date),
     CONSTRAINT fk_time_series_metadata FOREIGN KEY (series_id)
         REFERENCES metadata(series_id)
-);
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS logs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -784,10 +784,16 @@ def main() -> None:
             with st.expander("Latest captured traceback"):
                 st.code(errs.iloc[0]["traceback"] or "No traceback")
         st.write("")
-        b1, b2, b3 = st.columns(3)
+        latest_success = logs[logs["status"] == "success"]
+        quality_state = "UNKNOWN"
+        if not latest_success.empty:
+            latest_log_text = str(latest_success.iloc[0]["log_text"])
+            quality_state = "PASS" if "quality=pass" in latest_log_text else "REVIEW"
+        b1, b2, b3, b4 = st.columns(4)
         b1.metric("metadata rows", f"{len(metadata):,}")
         b2.metric("time_series rows", f"{len(history):,}")
         b3.metric("log rows", f"{len(logs):,}")
+        b4.metric("data quality", quality_state)
         st.markdown("**Reproduce end to end**")
         st.code(
             "python -m pytest -q\n"

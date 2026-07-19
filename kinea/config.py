@@ -20,6 +20,11 @@ class SeriesSpec:
     sdmx_key: str
     frequency: str
     unit: str
+    min_value: float | None = None
+    max_value: float | None = None
+    max_change_pct: float | None = None
+    max_gap_days: int | None = None
+    stale_after_days: int | None = None
 
     def request_url(self, base_url: str, params: dict[str, str] | None = None) -> str:
         from urllib.parse import urlencode

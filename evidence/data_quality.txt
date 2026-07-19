@@ -1,0 +1,12 @@
+DATA QUALITY REPORT
+===================
+As of: 2026-07-19
+Status: PASS
+
+CZ_FX_EURCZK: PASS | observations=7051 | first=1999-01-04 | last=2026-07-17
+CZ_HICP_CORE_INDEX: PASS | observations=319 | first=1999-12-01 | last=2026-06-01
+CZ_HICP_ENERGY_INDEX: PASS | observations=319 | first=1999-12-01 | last=2026-06-01
+CZ_HICP_FOOD_INDEX: PASS | observations=319 | first=1999-12-01 | last=2026-06-01
+CZ_HICP_SERVICES_INDEX: PASS | observations=319 | first=1999-12-01 | last=2026-06-01
+
+RESULT: PASS

@@ -536,10 +536,14 @@ def audit_preview(metadata, current, logs):
     )
     _card(fig, 0.045, 0.76, 0.205, 0.105, "METADATA ROWS", f"{len(metadata):,}", BLUE)
     _card(fig, 0.275, 0.76, 0.205, 0.105, "TIME SERIES ROWS", f"{len(current):,}", TEAL)
-    _card(
-        fig, 0.505, 0.76, 0.205, 0.105, "SUCCESS LOGS", f"{(logs.status == 'success').sum()}", BLUE
+    _card(fig, 0.505, 0.76, 0.205, 0.105, "LOG ROWS", f"{len(logs):,}", BLUE)
+    latest_success = logs[logs.status == "success"].sort_values("id", ascending=False)
+    quality = (
+        "PASS"
+        if not latest_success.empty and "quality=pass" in str(latest_success.iloc[0].log_text)
+        else "REVIEW"
     )
-    _card(fig, 0.735, 0.76, 0.205, 0.105, "ERROR LOGS", f"{(logs.status == 'error').sum()}", RED)
+    _card(fig, 0.735, 0.76, 0.205, 0.105, "DATA QUALITY", quality, TEAL)
     ax = fig.add_axes([0.06, 0.31, 0.90, 0.35], facecolor="white")
     ax.axis("off")
     ax.text(

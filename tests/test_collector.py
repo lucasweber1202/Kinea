@@ -125,7 +125,9 @@ def test_external_values_are_bound_as_sql_parameters():
 
         def fetch(self, spec, params=None):
             del params
-            body = f"KEY,TIME_PERIOD,OBS_VALUE\n{spec.external_id},2026-06,101.2\n"
+            reference = "2026-07-17" if spec.frequency == "daily" else "2026-06"
+            value = 24.2 if spec.frequency == "daily" else 101.2
+            body = f"KEY,TIME_PERIOD,OBS_VALUE\n{spec.external_id},{reference},{value}\n"
             return FetchResult(
                 body=body,
                 source_url="x'); DROP TABLE metadata; --",
