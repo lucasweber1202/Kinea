@@ -356,7 +356,7 @@ def hicp_preview(metadata, current):
     table_ax.text(
         0,
         0.08,
-        "Period selection and component filters are available in Streamlit.",
+        "Streamlit also exposes YoY, MoM, 3m annualized, rebased views, and a YoY heatmap.",
         fontsize=9,
         color="#667085",
         wrap=True,
@@ -501,9 +501,17 @@ def vintages_preview(metadata, demo_history):
         cell.set_facecolor("#F8FAFC" if row == 0 else "white")
         if row == 0:
             cell.set_text_props(weight="bold", color="#475467")
-    ax_table.text(0, 0.27, "Storage decision", fontsize=10, color="#667085")
+    change = last.value - first.value
+    pct_change = change / first.value * 100.0 if first.value else float("nan")
+    lag_days = (last.vintage_date.date() - first.vintage_date.date()).days
+    ax_table.text(0, 0.27, "Revision analytics", fontsize=10, color="#667085")
     ax_table.text(
-        0, 0.18, "Append a new vintage dated 18 July 2026", fontsize=16, weight="bold", color=NAVY
+        0,
+        0.18,
+        f"Change {change:+.2f} · {pct_change:+.2f}% · observed lag {lag_days} days",
+        fontsize=15,
+        weight="bold",
+        color=NAVY,
     )
     ax_table.text(
         0,

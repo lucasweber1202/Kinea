@@ -1,8 +1,10 @@
 # Delivery handoff
 
 This repository is the review-ready submission for the Kinea internship data-collector
-assignment. Release tag `v1.1.0` identifies the delivered source tree; `SHA256SUMS` distributed
+assignment. Release tag `v1.2.0` identifies the delivered source tree; `SHA256SUMS` distributed
 with the release verifies the downloadable ZIP and Git bundle.
+The installable Python package is version `2.1.0`, a backward-compatible feature release over the
+rewritten `2.0.0` collector core.
 
 ## Five-minute review
 
@@ -29,9 +31,11 @@ network-independent.
 - Data trust: pre-ingest range, cadence, jump, future-date, and staleness checks with a committed
   report and run-level quality status.
 - Source drift protection: five real ECB golden fixtures plus a separately scheduled live contract.
+- Analysis toolkit: canonical YoY, MoM, three-month annualized and rebased transformations, plus
+  set-based revision magnitude/direction/observed-lag analytics without adding database tables.
 - Presentation: six Streamlit sections, seven CSV exports, source coverage, vintages, as-of view,
   and execution audit.
-- Automated quality gate: 75 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
+- Automated quality gate: 89 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
   fail-closed delivery validator.
 
 ## Evidence map
@@ -44,6 +48,8 @@ network-independent.
 | Two coexisting vintages | `evidence/revision_demo.db`, `evidence/revision_demo.txt` |
 | Historical as-of result | `evidence/as_of_demo.txt` |
 | Backtest-ready PIT panel | `evidence/pit_panel.csv`, `evidence/pit_panel.parquet` |
+| Revision analytics | `kinea/analytics.py`, `python -m kinea.cli revisions` |
+| Canonical derived views | `kinea/transforms.py`, HICP dashboard controls and heatmap |
 | Success and error logging | `evidence/success_log.txt`, `evidence/error_log.txt` |
 | Live source comparison | `evidence/live_validation.txt` |
 | Semantic data quality | `evidence/data_quality.txt` |
@@ -82,5 +88,6 @@ changes official values in `evidence/kinea.db`.
 - [x] Semantic quality gate and report
 - [x] Golden and scheduled live source contracts
 - [x] Property-based vintage invariants and float-noise tolerance
+- [x] Tested derived transformations and set-based revision analytics
 - [x] Automated tests and fail-closed delivery validator
 - [x] Reproducible ZIP, Git bundle, checksums, and GitHub tag

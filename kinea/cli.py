@@ -121,6 +121,45 @@ def _cmd_panel(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_quality(args: argparse.Namespace) -> int:
+    from .quality import evaluate_database, format_quality_report
+
+    config = load_config(args.config)
+    conn = connect(args.db)
+    as_of = args.as_of or date.today().isoformat()
+    reports = evaluate_database(conn, config, as_of=as_of)
+    conn.close()
+    print(format_quality_report(reports, as_of=as_of))
+    return 0 if all(report.passed for report in reports) else 1
+
+
+def _cmd_revisions(args: argparse.Namespace) -> int:
+    from .analytics import revision_events, revision_summary
+
+    conn = connect(args.db)
+    events = revision_events(conn, args.series)
+    if not events:
+        print("No multi-vintage observations found.")
+        conn.close()
+        return 0
+    print("series_id | reference_date | vintages | first | latest | change | pct | lag_days")
+    for event in events:
+        pct = "n/a" if event.pct_change is None else f"{event.pct_change:+.2f}%"
+        print(
+            f"{event.series_id} | {event.reference_date} | {event.n_vintages} | "
+            f"{event.first_value} | {event.latest_value} | {event.change:+.4g} | "
+            f"{pct} | {event.lag_days}"
+        )
+    print("\nsummary:")
+    for row in revision_summary(conn, args.series):
+        print(
+            f"  {row.series_id}: revised={row.n_revised} mean|change|={row.mean_abs_revision:.4g} "
+            f"max|change|={row.max_abs_revision:.4g} mean_lag={row.mean_lag_days:.1f}d"
+        )
+    conn.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kinea")
     parser.add_argument("--config", default=None)
@@ -165,6 +204,16 @@ def main(argv: list[str] | None = None) -> int:
     panel_parser.add_argument("--output", required=True)
     panel_parser.add_argument("--format", choices=("csv", "parquet", "feather"), default="csv")
     panel_parser.set_defaults(func=_cmd_panel)
+
+    quality_parser = sub.add_parser("quality", help="Run the semantic data-quality gate")
+    quality_parser.add_argument("--db", required=True)
+    quality_parser.add_argument("--as-of", help="Reference date for freshness (default: today)")
+    quality_parser.set_defaults(func=_cmd_quality)
+
+    revisions_parser = sub.add_parser("revisions", help="Revision analytics from vintage history")
+    revisions_parser.add_argument("--db", required=True)
+    revisions_parser.add_argument("--series", help="Optional series filter")
+    revisions_parser.set_defaults(func=_cmd_revisions)
 
     args = parser.parse_args(argv)
     return args.func(args)

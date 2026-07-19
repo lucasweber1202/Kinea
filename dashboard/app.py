@@ -21,6 +21,7 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from kinea import transforms  # noqa: E402
 from kinea.db import AS_OF_QUERY, CURRENT_QUERY  # noqa: E402
 
 DEFAULT_DB = ROOT / "evidence" / "kinea.db"
@@ -131,24 +132,27 @@ def kpi(col, label: str, value: str, sub: str = "", accent: str = "#155EEF") -> 
     )
 
 
-def add_yoy(frame: pd.DataFrame, periods: int) -> pd.DataFrame:
+def _apply_transform(frame: pd.DataFrame, func) -> pd.DataFrame:
+    """Apply a per-series transform from kinea.transforms and drop uncomputable rows."""
     out = frame.sort_values("reference_date").copy()
-    out["value"] = out.groupby("series_id")["value"].transform(
-        lambda s: s.pct_change(periods, fill_method=None) * 100.0
-    )
+    out["value"] = out.groupby("series_id")["value"].transform(func)
     return out.dropna(subset=["value"])
+
+
+def add_yoy(frame: pd.DataFrame, periods: int = 12) -> pd.DataFrame:
+    return _apply_transform(frame, lambda s: transforms.year_over_year(s, periods))
+
+
+def add_mom(frame: pd.DataFrame) -> pd.DataFrame:
+    return _apply_transform(frame, transforms.month_over_month)
+
+
+def add_annualized(frame: pd.DataFrame, window: int = 3) -> pd.DataFrame:
+    return _apply_transform(frame, lambda s: transforms.annualized(s, window))
 
 
 def rebase100(frame: pd.DataFrame) -> pd.DataFrame:
-    def rebase(series: pd.Series) -> pd.Series:
-        base = series.iloc[0]
-        if pd.isna(base) or base == 0:
-            return pd.Series(float("nan"), index=series.index)
-        return series / base * 100.0
-
-    out = frame.sort_values("reference_date").copy()
-    out["value"] = out.groupby("series_id")["value"].transform(rebase)
-    return out.dropna(subset=["value"])
+    return _apply_transform(frame, transforms.rebase)
 
 
 def line_chart(
@@ -439,16 +443,34 @@ def main() -> None:
         top = st.columns([3, 2, 2])
         selected = top[0].multiselect("Components", hicp_ids, default=hicp_ids, format_func=_short)
         view = top[1].selectbox(
-            "View", ["Index level (2025=100)", "Year-over-year %", "Rebased to 100"]
+            "View",
+            [
+                "Index level (2025=100)",
+                "Year-over-year %",
+                "Month-over-month %",
+                "3m annualized %",
+                "Rebased to 100",
+            ],
         )
-        hicp = current[current["series_id"].isin(selected)]
+        hicp_full = current[current["series_id"].isin(selected)]
         with top[2]:
-            hicp = period_selector(hicp, "hicp_win", "Last 10 years")
+            hicp = period_selector(hicp_full, "hicp_win", "Last 10 years")
         if hicp.empty:
             st.info("Select at least one component.")
         else:
+            window_start = hicp["reference_date"].min()
             if view == "Year-over-year %":
-                shown, ytitle, fmt = add_yoy(hicp, 12), "% change vs a year earlier", ".1f"
+                shown = add_yoy(hicp_full, 12)
+                shown = shown[shown["reference_date"] >= window_start]
+                ytitle, fmt = "% change vs a year earlier", ".1f"
+            elif view == "Month-over-month %":
+                shown = add_mom(hicp_full)
+                shown = shown[shown["reference_date"] >= window_start]
+                ytitle, fmt = "% change vs previous month", ".1f"
+            elif view == "3m annualized %":
+                shown = add_annualized(hicp_full)
+                shown = shown[shown["reference_date"] >= window_start]
+                ytitle, fmt = "3-month change, annualized %", ".1f"
             elif view == "Rebased to 100":
                 shown, ytitle, fmt = rebase100(hicp), "Index (window start = 100)", ".1f"
             else:
@@ -456,6 +478,11 @@ def main() -> None:
             st.altair_chart(line_chart(shown, ytitle, fmt, 400), width="stretch")
             if view != "Index level (2025=100)":
                 st.caption("Derived in the view layer — the database stores only raw index levels.")
+            if view in {"Month-over-month %", "3m annualized %"}:
+                st.caption(
+                    "ECB component levels are not seasonally adjusted; short-horizon changes "
+                    "can contain recurring seasonal effects."
+                )
             latest = hicp.sort_values("reference_date").groupby("series_id").tail(1).copy()
             latest["Series"] = latest["series_id"].map(_short)
             latest["reference_date"] = latest["reference_date"].dt.date
@@ -473,11 +500,57 @@ def main() -> None:
             )
             st.download_button(
                 "Download displayed CSV",
-                _csv_bytes(hicp),
+                _csv_bytes(shown),
                 "kinea-hicp.csv",
                 "text/csv",
                 key="dl_hicp",
             )
+
+            st.write("")
+            st.markdown("**Year-over-year heatmap**")
+            st.caption(
+                "Inflation regime at a glance — darker red indicates faster year-over-year "
+                "price growth."
+            )
+            heat = add_yoy(hicp_full, 12)
+            heat = heat[heat["reference_date"] >= window_start]
+            if not heat.empty:
+                heat = heat.copy()
+                heat["Component"] = heat["series_id"].map(_short)
+                heatmap = (
+                    alt.Chart(heat)
+                    .mark_rect()
+                    .encode(
+                        x=alt.X(
+                            "yearmonth(reference_date):T",
+                            title=None,
+                            axis=alt.Axis(format="%Y", grid=False),
+                        ),
+                        y=alt.Y(
+                            "Component:N",
+                            title=None,
+                            sort=[
+                                _short(s) for s in hicp_ids if _short(s) in set(heat["Component"])
+                            ],
+                        ),
+                        color=alt.Color(
+                            "value:Q",
+                            title="YoY %",
+                            scale=alt.Scale(scheme="yelloworangered"),
+                        ),
+                        tooltip=[
+                            alt.Tooltip("Component:N"),
+                            alt.Tooltip("yearmonth(reference_date):T", title="Month"),
+                            alt.Tooltip("value:Q", title="YoY %", format=".1f"),
+                        ],
+                    )
+                    .properties(height=32 * heat["Component"].nunique() + 40)
+                    .configure_view(stroke=None)
+                    .configure_axis(
+                        labelColor=MUTED, titleColor=MUTED, domainColor=GRID, tickColor=GRID
+                    )
+                )
+                st.altair_chart(heatmap, width="stretch")
 
     # ---- EUR/CZK ----------------------------------------------------------------------
     with fx_tab:
@@ -557,6 +630,25 @@ def main() -> None:
                 f"<b>{safe_series} · {chosen_ref}</b> — first observed "
                 f"<b>{first['value']:.2f}</b> on {first['vintage_date'].date()}, currently "
                 f"<b>{last['value']:.2f}</b> (Δ {dv:+.2f})</div>",
+                unsafe_allow_html=True,
+            )
+            st.write("")
+            pct = (dv / first["value"] * 100.0) if first["value"] else float("nan")
+            lag_days = (last["vintage_date"].date() - first["vintage_date"].date()).days
+            rt = st.columns(3)
+            rt[0].markdown(
+                f'<div class="tile"><div class="t-lab">Revision size</div>'
+                f'<div class="t-val">{dv:+.2f}</div></div>',
+                unsafe_allow_html=True,
+            )
+            rt[1].markdown(
+                f'<div class="tile"><div class="t-lab">Revision %</div>'
+                f'<div class="t-val">{pct:+.2f}%</div></div>',
+                unsafe_allow_html=True,
+            )
+            rt[2].markdown(
+                f'<div class="tile"><div class="t-lab">Vintage lag</div>'
+                f'<div class="t-val">{lag_days} days</div></div>',
                 unsafe_allow_html=True,
             )
             st.write("")

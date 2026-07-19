@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: install lint test validate verify dashboard panel-demo contract-live evidence-live evidence-offline
+.PHONY: install lint test validate verify dashboard panel-demo quality revisions-demo contract-live evidence-live evidence-offline
 
 install:
 	$(PYTHON) -m pip install -e ".[dev,dashboard,modeling]"
@@ -24,6 +24,12 @@ panel-demo:
 	$(PYTHON) -m kinea.cli panel --db evidence/revision_demo.db \
 		--as-of 2026-07-10,2026-07-18 --series CZ_HICP_CORE_INDEX \
 		--format parquet --output /tmp/kinea-pit-panel.parquet
+
+quality:
+	$(PYTHON) -m kinea.cli quality --db evidence/kinea.db --as-of 2026-07-19
+
+revisions-demo:
+	$(PYTHON) -m kinea.cli revisions --db evidence/revision_demo.db
 
 contract-live:
 	$(PYTHON) scripts/check_source_contract.py

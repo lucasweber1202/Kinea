@@ -231,6 +231,32 @@ tabs separately.
 
 ![Collection audit](docs/dashboard-audit.png)
 
+## Analysis toolkit
+
+Beyond storage, the repository derives the views a forecasting desk actually uses — all
+computed on demand, never persisted (the database stays raw, adding no table to the three).
+
+Command line:
+
+```bash
+python -m kinea.cli quality   --db evidence/kinea.db          # semantic data-quality gate report
+python -m kinea.cli revisions --db evidence/revision_demo.db  # revision size, direction, observed lag
+python -m kinea.cli panel     --db evidence/kinea.db --start 2015-01-01 --end 2026-06-01 \
+                              --frequency monthly --output panel.csv   # look-ahead-free backtest panel
+```
+
+Library:
+
+- `kinea.transforms` — `year_over_year`, `month_over_month`, `annualized`, `rebase` (per-series
+  derived views, from one tested implementation).
+- `kinea.analytics` — `revision_events` / `revision_summary`: magnitude, direction, and elapsed
+  time between first and latest observed vintage, computed in one set-based SQL query.
+- `kinea.panels` — `as_of_panel` / `knowledge_date_grid`: point-in-time panels for honest backtests.
+
+Dashboard: the HICP tab adds **month-over-month** and **3-month-annualized** views plus a
+**year-over-year inflation heatmap**; the Vintages tab shows revision **size, %, and observed
+vintage lag** tiles. Short-horizon HICP views are explicitly labelled as not seasonally adjusted.
+
 ## Schema and vintage semantics
 
 The database contains exactly the three assignment tables:

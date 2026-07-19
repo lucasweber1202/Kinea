@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from kinea.analytics import revision_events  # noqa: E402
 from kinea.client import OfflineClient  # noqa: E402
 from kinea.collector import collect  # noqa: E402
 from kinea.config import load_config  # noqa: E402
@@ -62,9 +63,12 @@ REQUIRED_FILES = [
     "fixtures/contracts/HICP.M.CZ.N.FOOD00.4D0.INX.csv",
     "fixtures/contracts/HICP.M.CZ.N.SERV00.4D0.INX.csv",
     "tests/test_contracts.py",
+    "tests/test_analysis_cli.py",
+    "tests/test_analytics.py",
     "tests/test_panels.py",
     "tests/test_quality.py",
     "tests/test_vintages_properties.py",
+    "tests/test_transforms.py",
     "tests/test_scripts.py",
     "tests/test_dashboard.py",
     "tests/test_config.py",
@@ -73,8 +77,10 @@ REQUIRED_FILES = [
     "scripts/validate_delivery.py",
     "kinea/db.py",
     "kinea/vintages.py",
+    "kinea/analytics.py",
     "kinea/panels.py",
     "kinea/quality.py",
+    "kinea/transforms.py",
     "kinea/collector.py",
     "kinea/client.py",
     "kinea/parser.py",
@@ -308,6 +314,14 @@ def _run_validation(evidence_dir: Path) -> Validator:
             panel_values == [history[0]["value"], history[1]["value"]]
             and all(row.vintage_date <= row.knowledge_date for row in panel),
         )
+        revision = revision_events(demo, revised["series_id"])
+        result.check(
+            "Revision analytics report signed change, magnitude, and observed lag",
+            len(revision) == 1
+            and revision[0].change == history[1]["value"] - history[0]["value"]
+            and revision[0].abs_change == abs(revision[0].change)
+            and revision[0].lag_days == 17,
+        )
     demo.close()
 
     pit_csv = (evidence_dir / "pit_panel.csv").read_text(encoding="utf-8")
@@ -335,7 +349,16 @@ def _run_validation(evidence_dir: Path) -> Validator:
         "Demo revisions" in dashboard
         and "first observed" in dashboard
         and "Download as-of snapshot CSV" in dashboard
+        and "Month-over-month %" in dashboard
+        and "3m annualized %" in dashboard
+        and "Year-over-year heatmap" in dashboard
+        and "_csv_bytes(shown)" in dashboard
         and "use_container_width" not in dashboard,
+    )
+    cli = (ROOT / "kinea" / "cli.py").read_text(encoding="utf-8")
+    result.check(
+        "CLI exposes quality and revision analytics",
+        'sub.add_parser("quality"' in cli and 'sub.add_parser("revisions"' in cli,
     )
     live = (evidence_dir / "live_validation.txt").read_text(encoding="utf-8")
     result.check(

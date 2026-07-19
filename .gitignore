@@ -5,6 +5,8 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.hypothesis/
+.ruff_cache/
 .ipynb_checkpoints/
 
 # Local scratch databases (the curated evidence DB IS committed on purpose)

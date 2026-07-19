@@ -29,11 +29,29 @@ def test_dashboard_contract_and_default_revision_story():
     assert any("1 observation(s) changed since 2026-07-01" in item.value for item in app.markdown)
 
 
+def test_all_derived_hicp_views_render_without_exceptions():
+    app = AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=30).run()
+
+    for view in (
+        "Year-over-year %",
+        "Month-over-month %",
+        "3m annualized %",
+        "Rebased to 100",
+    ):
+        app.selectbox[0].set_value(view)
+        app.run()
+        assert not app.exception
+        assert len(app.get("vega_lite_chart")) >= 6
+
+
 def test_dashboard_uses_current_streamlit_width_api():
     source = (ROOT / "dashboard" / "app.py").read_text(encoding="utf-8")
 
     assert "use_container_width" not in source
     assert "first published" not in source
+    assert "_csv_bytes(shown)" in source
+    assert 'scheme="yelloworangered"' in source
+    assert "not seasonally adjusted" in source
 
 
 def test_freshness_thresholds_respect_native_frequency():
