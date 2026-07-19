@@ -19,6 +19,7 @@ TOKEN_LABELS = {
     "INDEX": "Index",
     "EURCZK": "EUR/CZK",
 }
+KNOWN_TOKENS = set(COUNTRY_NAMES) | set(TOKEN_LABELS)
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,23 @@ def parse_series_id(series_id: str) -> SeriesIdParts:
         raise ValueError(
             "series_id must be upper-case alphanumeric tokens separated by underscores"
         )
-    country, family, *qualifiers = series_id.split("_")
+    tokens = series_id.split("_")
+    unknown = [token for token in tokens if token not in KNOWN_TOKENS]
+    if unknown:
+        raise ValueError(f"unknown series_id token(s): {', '.join(unknown)}")
+    country, family, *qualifiers = tokens
+    if family == "FX":
+        valid_shape = qualifiers == ["EURCZK"]
+    elif family == "HICP":
+        valid_shape = (
+            len(qualifiers) == 2
+            and qualifiers[0] in {"CORE", "ENERGY", "FOOD", "SERVICES"}
+            and qualifiers[1] == "INDEX"
+        )
+    else:
+        valid_shape = False
+    if not valid_shape:
+        raise ValueError(f"invalid structured series_id grammar: {series_id}")
     return SeriesIdParts(country=country, family=family, qualifiers=tuple(qualifiers))
 
 

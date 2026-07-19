@@ -58,6 +58,16 @@ def test_changed_later_collection_appends_vintage():
     )] == [100.0, 101.0]
 
 
+def test_later_revision_preserves_entire_old_row():
+    conn = _conn()
+    _ingest(conn, 100.0, "2026-02-10", "2026-02-10T09:00:00+00:00")
+    _ingest(conn, 101.0, "2026-03-10", "2026-03-10T09:00:00+00:00")
+    old = conn.execute(
+        "SELECT value, collected_at FROM time_series WHERE vintage_date='2026-02-10'"
+    ).fetchone()
+    assert tuple(old) == (100.0, "2026-02-10T09:00:00+00:00")
+
+
 def test_changed_same_day_updates_in_place():
     conn = _conn()
     _ingest(conn, 100.0, "2026-02-10", "2026-02-10T09:00:00+00:00")
@@ -80,3 +90,15 @@ def test_rejects_non_monotonic_vintage_backfill():
     _ingest(conn, 101.0, "2026-03-10")
     with pytest.raises(ValueError, match="non-monotonic"):
         _ingest(conn, 100.0, "2026-02-10")
+
+
+def test_primary_key_prevents_duplicate_vintage_rows():
+    import sqlite3
+
+    conn = _conn()
+    _ingest(conn, 100.0, "2026-02-10")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO time_series VALUES (?, ?, ?, ?, ?)",
+            (SERIES, "2026-01-01", "2026-02-10", 100.0, "2026-02-10T11:00:00+00:00"),
+        )

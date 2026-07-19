@@ -1,6 +1,6 @@
 SIMULATED REVISION DEMONSTRATION
 ===============================
-Dedicated database: evidence/revision_demo.db (official ECB values remain untouched)
+Dedicated database: revision_demo.db (official ECB values remain untouched)
 Two coexisting rows:
 series_id | reference_date | value | vintage_date | collected_at
 --- | --- | --- | --- | ---

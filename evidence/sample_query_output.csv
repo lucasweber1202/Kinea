@@ -1,0 +1,16 @@
+series_id,name,frequency,unit,reference_date,value,vintage_date
+CZ_FX_EURCZK,Czechia - FX EUR/CZK,daily,currency,2026-07-17,24.205,2026-07-19
+CZ_FX_EURCZK,Czechia - FX EUR/CZK,daily,currency,2026-07-16,24.194,2026-07-19
+CZ_FX_EURCZK,Czechia - FX EUR/CZK,daily,currency,2026-07-15,24.233,2026-07-19
+CZ_HICP_CORE_INDEX,Czechia - HICP Core Index,monthly,index,2026-06-01,102.79,2026-07-19
+CZ_HICP_CORE_INDEX,Czechia - HICP Core Index,monthly,index,2026-05-01,102.53,2026-07-19
+CZ_HICP_CORE_INDEX,Czechia - HICP Core Index,monthly,index,2026-04-01,102.4,2026-07-19
+CZ_HICP_ENERGY_INDEX,Czechia - HICP Energy Index,monthly,index,2026-06-01,98.54,2026-07-19
+CZ_HICP_ENERGY_INDEX,Czechia - HICP Energy Index,monthly,index,2026-05-01,101.36,2026-07-19
+CZ_HICP_ENERGY_INDEX,Czechia - HICP Energy Index,monthly,index,2026-04-01,101.63,2026-07-19
+CZ_HICP_FOOD_INDEX,Czechia - HICP Food Index,monthly,index,2026-06-01,99.74,2026-07-19
+CZ_HICP_FOOD_INDEX,Czechia - HICP Food Index,monthly,index,2026-05-01,100.64,2026-07-19
+CZ_HICP_FOOD_INDEX,Czechia - HICP Food Index,monthly,index,2026-04-01,100.24,2026-07-19
+CZ_HICP_SERVICES_INDEX,Czechia - HICP Services Index,monthly,index,2026-06-01,104.1,2026-07-19
+CZ_HICP_SERVICES_INDEX,Czechia - HICP Services Index,monthly,index,2026-05-01,103.8,2026-07-19
+CZ_HICP_SERVICES_INDEX,Czechia - HICP Services Index,monthly,index,2026-04-01,103.46,2026-07-19

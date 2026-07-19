@@ -1,0 +1,20 @@
+AS-OF QUERY DEMONSTRATION
+=========================
+Series: CZ_HICP_CORE_INDEX
+Reference date: 2026-06-01
+
+Vintage 1:
+vintage_date: 2026-07-01
+value: 102.79
+
+Vintage 2:
+vintage_date: 2026-07-18
+value: 103.0
+
+AS OF 2026-07-10:
+102.79
+
+CURRENT:
+103.0
+
+RESULT: PASS

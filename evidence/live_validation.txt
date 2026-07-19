@@ -1,6 +1,9 @@
 LIVE ECB VALIDATION
 ===================
 Status: PASS
+data-api.ecb.europa.eu HTTP status: 200
+data.ecb.europa.eu HTTP status: 200
+HTTP status: 200 for both required ECB hosts
 First collection: mode=live; series=5; seen=8327; inserted=8327; revised=0; updated_same_day=0; unchanged=0; warnings=62
 Immediate repeat: mode=live; series=5; seen=8327; inserted=0; revised=0; updated_same_day=0; unchanged=8327; warnings=62
 
@@ -11,5 +14,15 @@ CZ_HICP_CORE_INDEX | 319 | 1999-12-01 | 2026-06-01
 CZ_HICP_ENERGY_INDEX | 319 | 1999-12-01 | 2026-06-01
 CZ_HICP_FOOD_INDEX | 319 | 1999-12-01 | 2026-06-01
 CZ_HICP_SERVICES_INDEX | 319 | 1999-12-01 | 2026-06-01
+
+RAW RESPONSE SAMPLE COMPARISON - ALL FIVE SERIES
+series_id | external_id | http_status | reference_date | raw_value | stored_value | match
+--- | --- | --- | --- | --- | --- | ---
+CZ_FX_EURCZK | EXR.D.CZK.EUR.SP00.A | 200 | 2026-07-17 | 24.205 | 24.205 | True
+CZ_HICP_CORE_INDEX | HICP.M.CZ.N.XEF000.4D0.INX | 200 | 2026-06-01 | 102.79 | 102.79 | True
+CZ_HICP_ENERGY_INDEX | HICP.M.CZ.N.NRGY00.4D0.INX | 200 | 2026-06-01 | 98.54 | 98.54 | True
+CZ_HICP_FOOD_INDEX | HICP.M.CZ.N.FOOD00.4D0.INX | 200 | 2026-06-01 | 99.74 | 99.74 | True
+CZ_HICP_SERVICES_INDEX | HICP.M.CZ.N.SERV00.4D0.INX | 200 | 2026-06-01 | 104.1 | 104.1 | True
+live_series_matches: 5/5
 
 Source endpoints are stored in metadata.source_url.

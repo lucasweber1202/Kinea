@@ -96,6 +96,20 @@ def as_of_rows(conn: sqlite3.Connection, as_of: str) -> list[sqlite3.Row]:
     return conn.execute(AS_OF_QUERY, {"as_of": as_of}).fetchall()
 
 
+def get_current_view(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Return the latest known vintage for every series/reference-date pair."""
+
+    return current_rows(conn)
+
+
+def get_as_of_view(
+    conn: sqlite3.Connection, as_of_date: str
+) -> list[sqlite3.Row]:
+    """Return the latest vintage known on or before ``as_of_date``."""
+
+    return as_of_rows(conn, as_of_date)
+
+
 def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     return {
         table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

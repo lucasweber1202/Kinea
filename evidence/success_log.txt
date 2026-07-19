@@ -1,0 +1,3 @@
+id | started_at | finished_at | status | log_text | traceback
+--- | --- | --- | --- | --- | ---
+2 | 2026-07-19T02:47:03.142254+00:00 | 2026-07-19T02:47:28.659034+00:00 | success | mode=live; series=5; seen=8327; inserted=0; revised=0; updated_same_day=0; unchanged=8327; warnings=62 | None

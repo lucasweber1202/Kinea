@@ -92,6 +92,26 @@ def _series_chart(frame: pd.DataFrame, labels: dict[str, str], y_title: str):
     )
 
 
+def _period_filter(frame: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Offer a compact period selector without changing the stored native data."""
+    period = st.selectbox(
+        "Display period",
+        ["Full history", "Last 10 years", "Last 5 years", "Last 2 years"],
+        key=key,
+    )
+    if frame.empty or period == "Full history":
+        return frame
+    years = {"Last 10 years": 10, "Last 5 years": 5, "Last 2 years": 2}[period]
+    cutoff = frame["reference_date"].max() - pd.DateOffset(years=years)
+    return frame[frame["reference_date"] >= cutoff]
+
+
+def _csv_bytes(frame: pd.DataFrame) -> bytes:
+    """Serialize the visible data without adding a synthetic dataframe index."""
+
+    return frame.to_csv(index=False).encode("utf-8")
+
+
 def main() -> None:
     st.set_page_config(page_title="Czech inflation predictors", page_icon="📊", layout="wide")
     st.markdown(
@@ -145,8 +165,8 @@ def main() -> None:
     k3.metric("Revisions retained", f"{revisions:,}")
     k4.metric("Successful runs", f"{successful_runs}")
 
-    overview, hicp_tab, fx_tab, vintage_tab, logs_tab = st.tabs(
-        ["Overview", "HICP components", "EUR/CZK", "Vintages & as-of", "Run logs"]
+    overview, hicp_tab, fx_tab, vintage_tab, as_of_tab, audit_tab = st.tabs(
+        ["Overview", "HICP components", "EUR/CZK", "Vintages", "As-of", "Audit"]
     )
 
     with overview:
@@ -171,6 +191,26 @@ def main() -> None:
                 }
             )
             st.dataframe(coverage, hide_index=True, width="stretch")
+            sources = metadata[["name", "source_url"]].rename(
+                columns={"name": "Series", "source_url": "Official ECB endpoint"}
+            )
+            with st.expander("Official sources"):
+                st.dataframe(sources, hide_index=True, width="stretch")
+            d1, d2 = st.columns(2)
+            d1.download_button(
+                "Download metadata CSV",
+                _csv_bytes(metadata),
+                "kinea-metadata.csv",
+                "text/csv",
+                key="download_metadata",
+            )
+            d2.download_button(
+                "Download current observations CSV",
+                _csv_bytes(current),
+                "kinea-current-observations.csv",
+                "text/csv",
+                key="download_current",
+            )
         with right:
             st.subheader("Data contract")
             st.markdown(
@@ -184,6 +224,10 @@ def main() -> None:
             )
             if latest_reference is not None:
                 st.info(f"Latest reference date in this database: **{latest_reference.date()}**")
+            if not logs.empty:
+                last_log = logs.iloc[0]
+                st.metric("Last collection status", str(last_log["status"]).upper())
+                st.caption(f"Finished at {last_log['finished_at']}")
 
     with hicp_tab:
         hicp_ids = [sid for sid in metadata["series_id"] if "_HICP_" in sid]
@@ -194,6 +238,7 @@ def main() -> None:
             format_func=lambda value: labels[value],
         )
         hicp = current[current["series_id"].isin(selected)]
+        hicp = _period_filter(hicp, "hicp_period")
         if hicp.empty:
             st.info("Select at least one component.")
         else:
@@ -209,6 +254,13 @@ def main() -> None:
                 hide_index=True,
                 width="stretch",
             )
+            st.download_button(
+                "Download displayed HICP CSV",
+                _csv_bytes(hicp),
+                "kinea-hicp-selection.csv",
+                "text/csv",
+                key="download_hicp",
+            )
 
     with fx_tab:
         fx = current[current["series_id"].str.contains("_FX_", na=False)]
@@ -216,8 +268,21 @@ def main() -> None:
             "**Interpretation:** the number of Czech koruna per euro. A higher value means a weaker koruna."
         )
         if not fx.empty:
+            fx = _period_filter(fx, "fx_period")
             st.altair_chart(
                 _series_chart(fx, labels, "CZK per EUR"), width="stretch"
+            )
+            fx_meta = metadata[metadata["series_id"].str.contains("_FX_", na=False)].iloc[0]
+            f1, f2, f3 = st.columns(3)
+            f1.metric("Frequency", fx_meta["frequency"])
+            f2.metric("Unit", fx_meta["unit"])
+            f3.metric("Displayed observations", f"{len(fx):,}")
+            st.download_button(
+                "Download displayed EUR/CZK CSV",
+                _csv_bytes(fx),
+                "kinea-eurczk-selection.csv",
+                "text/csv",
+                key="download_fx",
             )
 
     with vintage_tab:
@@ -262,9 +327,31 @@ def main() -> None:
                 hide_index=True,
                 width="stretch",
             )
+            st.download_button(
+                "Download vintage history CSV",
+                _csv_bytes(detail),
+                "kinea-vintage-history.csv",
+                "text/csv",
+                key="download_vintages",
+            )
 
-        st.divider()
+            st.subheader("Old versus current")
+            comparison = detail[["vintage_date", "value"]].copy()
+            comparison["Version"] = ["Old"] + ["Current"] * (len(comparison) - 1)
+            comparison["Difference from first"] = comparison["value"] - first["value"]
+            st.dataframe(
+                comparison[["Version", "vintage_date", "value", "Difference from first"]]
+                .rename(columns={"vintage_date": "Vintage date", "value": "Value"}),
+                hide_index=True,
+                width="stretch",
+            )
+
+    with as_of_tab:
         st.subheader("Historical snapshot (as-of)")
+        st.markdown(
+            "Select a series and a knowledge date. The query excludes every vintage observed "
+            "after that date, then ranks the remaining versions per reference date."
+        )
         vintage_dates = revision_history["vintage_date"].dt.date
         min_vintage, max_vintage = vintage_dates.min(), vintage_dates.max()
         a1, a2 = st.columns([1, 2])
@@ -292,8 +379,43 @@ def main() -> None:
             st.caption(
                 f"Snapshot contains {len(snapshot)} reference dates, using only vintages on or before {as_of}."
             )
+            st.download_button(
+                "Download as-of snapshot CSV",
+                _csv_bytes(snapshot),
+                f"kinea-as-of-{as_of}.csv",
+                "text/csv",
+                key="download_as_of",
+            )
+            current_selection = revision_current[
+                revision_current["series_id"] == as_of_series
+            ][["reference_date", "value", "vintage_date"]].rename(
+                columns={"value": "current_value", "vintage_date": "current_vintage"}
+            )
+            comparison = snapshot[["reference_date", "value", "vintage_date"]].merge(
+                current_selection, on="reference_date", how="left"
+            )
+            comparison["difference"] = comparison["current_value"] - comparison["value"]
+            changed = comparison[comparison["difference"].abs() > 1e-12]
+            st.subheader("Snapshot versus current")
+            if changed.empty:
+                st.info("No later revision changes this selected snapshot.")
+            else:
+                st.dataframe(
+                    changed.rename(
+                        columns={
+                            "reference_date": "Reference date",
+                            "value": "As-of value",
+                            "vintage_date": "As-of vintage",
+                            "current_value": "Current value",
+                            "current_vintage": "Current vintage",
+                            "difference": "Difference",
+                        }
+                    ),
+                    hide_index=True,
+                    width="stretch",
+                )
 
-    with logs_tab:
+    with audit_tab:
         st.subheader("One row per execution")
         st.markdown(
             "A success and an intentionally triggered error are included so reviewers can verify "
@@ -301,10 +423,30 @@ def main() -> None:
         )
         display_logs = logs[["id", "started_at", "finished_at", "status", "log_text"]]
         st.dataframe(display_logs, hide_index=True, width="stretch")
+        st.download_button(
+            "Download execution logs CSV",
+            _csv_bytes(logs),
+            "kinea-execution-logs.csv",
+            "text/csv",
+            key="download_logs",
+        )
         errors = logs[logs["status"] == "error"]
         if not errors.empty:
             with st.expander("Latest captured traceback"):
                 st.code(errors.iloc[0]["traceback"] or "No traceback")
+        st.subheader("Database audit")
+        a1, a2, a3 = st.columns(3)
+        a1.metric("metadata rows", f"{len(metadata):,}")
+        a2.metric("time_series rows", f"{len(history):,}")
+        a3.metric("log rows", f"{len(logs):,}")
+        st.markdown("**Reproduce the delivery validation**")
+        st.code(
+            "python -m pytest -q\n"
+            "python scripts/generate_evidence.py --mode live\n"
+            "python scripts/validate_delivery.py\n"
+            "streamlit run dashboard/app.py"
+        )
+        st.caption("Every source URL is preserved in metadata; every execution is recorded in logs.")
 
 
 if __name__ == "__main__":

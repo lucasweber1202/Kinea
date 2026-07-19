@@ -11,6 +11,7 @@ venv/
 *.db
 !evidence/kinea.db
 !evidence/revision_demo.db
+evidence/offline/
 
 # OS / editor
 .DS_Store

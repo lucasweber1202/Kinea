@@ -133,6 +133,10 @@ def collect(
             warning_messages.extend(
                 f"{spec.series_id}: {message}" for message in parsed.warnings
             )
+            if not parsed.observations:
+                raise ValueError(
+                    f"{spec.series_id}: response contained zero valid observations"
+                )
             _ensure_metadata(
                 conn, spec, result.source_url, started, parsed.last_publish_date
             )

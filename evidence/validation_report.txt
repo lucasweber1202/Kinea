@@ -1,0 +1,31 @@
+[PASS] Python version supported - 3.12.13
+[PASS] Required files exist - 32 files
+[PASS] Dashboard screenshots are non-empty
+[PASS] Database opens successfully - ok
+[PASS] metadata table exists
+[PASS] time_series table exists
+[PASS] logs table exists
+[PASS] Database contains exactly the mandatory tables
+[PASS] Required columns exist
+[PASS] Primary keys are correct
+[PASS] Five series exist in metadata - ['CZ_FX_EURCZK', 'CZ_HICP_CORE_INDEX', 'CZ_HICP_ENERGY_INDEX', 'CZ_HICP_FOOD_INDEX', 'CZ_HICP_SERVICES_INDEX']
+[PASS] Five series exist in time_series
+[PASS] Every series_id is parseable
+[PASS] Metadata semantics are derived and consistent
+[PASS] Every time_series series_id exists in metadata
+[PASS] Foreign-key integrity passes
+[PASS] Metadata counts match time_series
+[PASS] No duplicate primary keys
+[PASS] Success log exists
+[PASS] Error log with traceback exists
+[PASS] Second run creates zero metadata rows
+[PASS] Second run creates zero vintage rows
+[PASS] Second run creates exactly one log row
+[PASS] Revision demonstration contains two vintages
+[PASS] Historical as-of returns old value
+[PASS] Current view returns revised value
+[PASS] Dashboard reads the mandatory schema
+[PASS] Dashboard exposes all six required sections
+[PASS] Live ECB validation passed
+
+DELIVERY STATUS: READY

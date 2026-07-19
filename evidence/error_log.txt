@@ -1,6 +1,6 @@
 id | started_at | finished_at | status | log_text | traceback
 --- | --- | --- | --- | --- | ---
-3 | 2026-07-18T23:00:00+00:00 | 2026-07-18T21:20:45.095348+00:00 | error | mode=offline; collection aborted after 0 series | Traceback (most recent call last):
+3 | 2026-07-19T02:47:28.755474+00:00 | 2026-07-19T02:47:28.755887+00:00 | error | mode=offline; collection aborted after 0 series | Traceback (most recent call last):
   File "<repo>/kinea/collector.py", line 129, in collect
     result = client.fetch(spec, params=params)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

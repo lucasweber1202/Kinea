@@ -1,7 +1,25 @@
 IDEMPOTENCY PROOF
 =================
-First live run: mode=live; series=5; seen=8327; inserted=8327; revised=0; updated_same_day=0; unchanged=0; warnings=62
-Before repeat: metadata=5; time_series=8327
-Repeat live run: mode=live; series=5; seen=8327; inserted=0; revised=0; updated_same_day=0; unchanged=8327; warnings=62
-After repeat:  metadata=5; time_series=8327
-PASS: repeat run added 0 metadata rows and 0 time_series vintages.
+OFFICIAL LIVE ECB DATABASE
+FIRST RUN: metadata=5; time_series=8327; logs=1
+SECOND RUN: metadata=5; time_series=8327; logs=2
+DELTA: metadata=0; time_series=0; logs=1
+LIVE RESULT: PASS
+
+DETERMINISTIC OFFLINE CONTROL
+FIRST RUN
+metadata: 5
+time_series: 524
+logs: 1
+
+SECOND RUN
+metadata: 5
+time_series: 524
+logs: 2
+
+DELTA
+metadata: 0
+time_series: 0
+logs: 1
+
+RESULT: PASS
