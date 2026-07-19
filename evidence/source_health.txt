@@ -1,0 +1,13 @@
+SOURCE HEALTH
+=============
+Status: PASS
+As of: 2026-07-19
+Latest success: 2026-07-19T14:55:14.202819+00:00
+Latest error: 2026-07-19T14:55:14.502824+00:00
+
+series_id | quality | last_observation | live_status | live_rows
+CZ_FX_EURCZK | pass | 2026-07-17 | None | None
+CZ_HICP_CORE_INDEX | pass | 2026-06-01 | None | None
+CZ_HICP_ENERGY_INDEX | pass | 2026-06-01 | None | None
+CZ_HICP_FOOD_INDEX | pass | 2026-06-01 | None | None
+CZ_HICP_SERVICES_INDEX | pass | 2026-06-01 | None | None

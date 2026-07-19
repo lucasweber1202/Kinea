@@ -52,6 +52,9 @@ def test_dashboard_uses_current_streamlit_width_api():
     assert "_csv_bytes(shown)" in source
     assert 'scheme="yelloworangered"' in source
     assert "not seasonally adjusted" in source
+    assert "hero_yoy = add_yoy(hero_full, 12)" in source
+    assert 'latest = shown.sort_values("reference_date")' in source
+    assert "Source publish date" in source
 
 
 def test_freshness_thresholds_respect_native_frequency():

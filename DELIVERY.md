@@ -1,10 +1,10 @@
 # Delivery handoff
 
 This repository is the review-ready submission for the Kinea internship data-collector
-assignment. Release tag `v1.2.0` identifies the delivered source tree; `SHA256SUMS` distributed
+assignment. Release tag `v2.2.0` identifies the delivered source tree; `SHA256SUMS` distributed
 with the release verifies the downloadable ZIP and Git bundle.
-The installable Python package is version `2.1.0`, a backward-compatible feature release over the
-rewritten `2.0.0` collector core.
+The installable Python package uses the same `2.2.0` version, avoiding separate release/package
+numbering.
 
 ## Five-minute review
 
@@ -33,9 +33,14 @@ network-independent.
 - Source drift protection: five real ECB golden fixtures plus a separately scheduled live contract.
 - Analysis toolkit: canonical YoY, MoM, three-month annualized and rebased transformations, plus
   set-based revision magnitude/direction/observed-lag analytics without adding database tables.
+- Production toolkit: selective/ranged collection, dry-run plans, raw payload SHA-256 archives,
+  execution lock, short write transactions, batched vintage ingest, Retry-After support, structured
+  per-series metrics, snapshot diff/export, source health and publication-lag reporting.
+- Modeling features: vintage-safe wide/long feature matrices with monthly HICP changes and
+  mixed-frequency EUR/CZK aggregation.
 - Presentation: six Streamlit sections, seven CSV exports, source coverage, vintages, as-of view,
   and execution audit.
-- Automated quality gate: 89 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
+- Automated quality gate: 111 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
   fail-closed delivery validator.
 
 ## Evidence map
@@ -48,10 +53,15 @@ network-independent.
 | Two coexisting vintages | `evidence/revision_demo.db`, `evidence/revision_demo.txt` |
 | Historical as-of result | `evidence/as_of_demo.txt` |
 | Backtest-ready PIT panel | `evidence/pit_panel.csv`, `evidence/pit_panel.parquet` |
+| Vintage-safe features | `evidence/feature_panel.csv` |
+| Snapshot difference | `evidence/as_of_diff.txt` |
 | Revision analytics | `kinea/analytics.py`, `python -m kinea.cli revisions` |
 | Canonical derived views | `kinea/transforms.py`, HICP dashboard controls and heatmap |
 | Success and error logging | `evidence/success_log.txt`, `evidence/error_log.txt` |
 | Live source comparison | `evidence/live_validation.txt` |
+| Machine-verifiable live proof | `evidence/live_validation.json` |
+| Operational health | `evidence/source_health.txt` |
+| Publication/observation lag | `evidence/publication_lag.txt` |
 | Semantic data quality | `evidence/data_quality.txt` |
 | Automated final audit | `evidence/validation_report.txt` |
 | Presentation captures | `docs/dashboard-*.png` |
@@ -59,6 +69,9 @@ network-independent.
 ## Operational safeguards
 
 - Fatal collection failures roll back partial series data and still create one error log row.
+- Network fetch and validation complete before `BEGIN IMMEDIATE`; the write lock is held only for
+  the batched database mutation.
+- The CLI uses a per-database file lock to reject overlapping scheduled runs.
 - Evidence generation is staged and validated before it atomically replaces the last-known-good
   delivery.
 - Offline fixtures write to an isolated directory and cannot replace the committed live database.
@@ -89,5 +102,9 @@ changes official values in `evidence/kinea.db`.
 - [x] Golden and scheduled live source contracts
 - [x] Property-based vintage invariants and float-noise tolerance
 - [x] Tested derived transformations and set-based revision analytics
+- [x] Snapshot diff/export and vintage-safe feature matrix
+- [x] Selective/ranged/dry-run collection and raw payload archive
+- [x] Short transaction, batched ingest, execution lock and Retry-After handling
+- [x] Source-health and publication-lag reporting
 - [x] Automated tests and fail-closed delivery validator
 - [x] Reproducible ZIP, Git bundle, checksums, and GitHub tag

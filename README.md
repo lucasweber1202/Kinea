@@ -11,6 +11,8 @@ historical as-of queries, and presents the result in a Streamlit dashboard.
 The collector in `kinea/` uses only the Python standard library. Dashboard and test dependencies
 are optional extras. No API key or secret is required.
 
+Release and package version are both `2.2.0`.
+
 For a compact release checklist and evidence map, see [`DELIVERY.md`](DELIVERY.md).
 
 ## Reviewer quick start
@@ -43,6 +45,8 @@ ends with `DELIVERY STATUS: READY`.
 | Labelled revision demonstration | `evidence/revision_demo.db` |
 | Fail-closed delivery audit | `scripts/validate_delivery.py` |
 | Six-section dashboard | `dashboard/app.py`, `docs/dashboard-*.png` |
+| Snapshot diff/export and feature matrix | `kinea/analytics.py`, `kinea/exports.py`, `kinea/features.py` |
+| Lock, payload archive and source health | `kinea/locking.py`, `kinea/archive.py`, `kinea/health.py` |
 
 ## Data source and series
 
@@ -93,17 +97,36 @@ late revisions:
 python -m kinea.cli collect --mode live --months 12 --db data/kinea.db
 ```
 
+Selective/ranged collection, a no-write plan and optional raw-response archive are available:
+
+```bash
+python -m kinea.cli collect --mode live --db data/kinea.db \
+  --series CZ_HICP_CORE_INDEX --start 2024-01-01 --end 2026-06-30
+python -m kinea.cli collect --mode live --db data/kinea.db --months 3 --dry-run
+python -m kinea.cli collect --mode live --db data/kinea.db --archive-dir data/raw
+python -m kinea.cli verify-archive --manifest data/raw/<run-id>-<external-id>.json
+```
+
+Raw payloads are gzip-compressed outside the relational database with a JSON manifest and SHA-256,
+preserving the mandatory three-table schema. Dry runs roll back both data and logs.
+
 Transient HTTP and network errors are retried with exponential backoff. Isolated invalid records
 produce explicit warnings while valid observations from the same response continue; a response
 with zero valid observations is treated as a grave extraction failure. Fatal failures propagate
 after the transaction is rolled back, and the `finally` path still writes one complete `error` row
 with timestamps, context, and traceback.
 
+HTTP parsing and quality checks happen before a short `BEGIN IMMEDIATE` write transaction. Existing
+vintages are loaded once per series and changes are written with `executemany`. The CLI also holds a
+per-database lock, honors `Retry-After` with jittered fallback backoff, and records bytes, latency,
+attempts, status and warning counts per series in `logs.log_text`.
+
 Before ingest, the collector applies per-series semantic policies from `config/series.json`:
 plausible ranges, maximum point-to-point changes, missing monthly periods or excessive daily gaps,
-future dates, and frequency-aware staleness. Errors fail the transaction; staleness is a visible
-warning because publication calendars and holidays can legitimately delay a fresh observation.
-The final execution log records `quality`, `quality_issues`, and ordinary parser warnings.
+future dates, and frequency-aware staleness. Impossible ranges, future dates and empty series fail;
+gaps, suspicious jumps and staleness warn by default so one malformed record does not abort the
+run, as required by the assignment. `--quality-policy strict` makes every issue blocking. The final
+execution log records `quality`, `quality_issues`, ordinary parser warnings and per-series metrics.
 
 ### Deterministic offline reproduction
 
@@ -182,10 +205,14 @@ The evidence directory includes:
 - `revision_demo.txt` and `revision_demo.db` — two coexisting simulated vintages;
 - `as_of_demo.txt` — old as-of value versus revised current value;
 - `pit_panel.csv` and `pit_panel.parquet` — two-date, no-look-ahead modeling export;
+- `feature_panel.csv` — vintage-safe forecasting features at two knowledge dates;
+- `as_of_diff.txt` — new/revised observations between two snapshots;
 - `data_quality.txt` — per-series semantic status, issues, and final gate result;
 - `sample_query.sql` and `sample_query_output.csv` — reproducible SQL result;
 - `success_log.txt` and `error_log.txt` — complete examples of both outcomes;
 - `live_validation.txt` — ECB host checks and raw-response comparisons for all five series;
+- `live_validation.json` — machine-validated HTTP, sample-match and live-idempotency proof;
+- `source_health.txt` and `publication_lag.txt` — operational and release-lag views;
 - `validation_report.txt` — fail-closed final delivery report.
 
 The simulated revision is deliberately isolated in `revision_demo.db`; it never modifies an
@@ -252,10 +279,27 @@ Library:
 - `kinea.analytics` — `revision_events` / `revision_summary`: magnitude, direction, and elapsed
   time between first and latest observed vintage, computed in one set-based SQL query.
 - `kinea.panels` — `as_of_panel` / `knowledge_date_grid`: point-in-time panels for honest backtests.
+- `kinea.features` — `feature_panel`: mixed-frequency features calculated independently inside each
+  knowledge snapshot, plus wide/long CSV/Parquet/Feather export.
+- `kinea.analytics.compare_as_of` — new/revised/removed observations between knowledge dates.
+- `kinea.exports` — current or as-of snapshots in long or wide layout.
 
 Dashboard: the HICP tab adds **month-over-month** and **3-month-annualized** views plus a
 **year-over-year inflation heatmap**; the Vintages tab shows revision **size, %, and observed
 vintage lag** tiles. Short-horizon HICP views are explicitly labelled as not seasonally adjusted.
+
+Operational CLI:
+
+```bash
+python -m kinea.cli diff --db evidence/revision_demo.db \
+  --from 2026-07-10 --to 2026-07-18
+python -m kinea.cli export --db evidence/kinea.db --as-of 2026-07-18 \
+  --layout wide --output snapshot.csv
+python -m kinea.cli features --db evidence/kinea.db --as-of 2026-07-18 \
+  --layout wide --output features.csv
+python -m kinea.cli source-health --db evidence/kinea.db --live
+python -m kinea.cli publication-lag --db evidence/kinea.db
+```
 
 ## Schema and vintage semantics
 
@@ -291,7 +335,12 @@ kinea/identifiers.py           structured-ID parser and derived metadata
 kinea/client.py                HTTP retry/backoff and offline fixtures
 kinea/parser.py                robust SDMX-CSV parser
 kinea/vintages.py              revision rules with float-noise tolerance
+kinea/archive.py               optional gzip payloads plus SHA-256 manifests
+kinea/locking.py               per-database process lock
 kinea/panels.py                point-in-time CSV/Parquet/Feather exports
+kinea/features.py              vintage-safe mixed-frequency feature matrices
+kinea/exports.py               current/as-of long and wide exports
+kinea/health.py                operational coverage/source health
 kinea/quality.py               range, cadence, jump, future-date, and staleness checks
 kinea/collector.py             transactional collection and final logging
 kinea/cli.py                   collect, status, as-of, vintages, and panel commands
@@ -309,8 +358,8 @@ tests/                         granular automated test suite
 - SQLite and explicit parameterized SQL keep the artifact portable and directly auditable.
 - The two text/composite-key tables use SQLite `WITHOUT ROWID`, avoiding a duplicate hidden B-tree
   while preserving the exact required columns and primary keys.
-- A collection is transactional: fatal failure rolls back partial data before the error log is
-  written.
+- A collection is transactional: all payloads are fetched and checked first, then one short batched
+  write either commits completely or rolls back before the error log is written.
 - Live evidence is generated in a staging directory, validated, and only then atomically promoted;
   a failed refresh cannot destroy the last-known-good delivery.
 - Retroactive collection dates are rejected to avoid inventing historical knowledge.

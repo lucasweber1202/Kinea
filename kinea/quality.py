@@ -15,6 +15,9 @@ class DataQualityError(ValueError):
     """Raised when a series violates a configured semantic invariant."""
 
 
+QUALITY_POLICIES = {"warn", "strict"}
+
+
 @dataclass(frozen=True)
 class QualityIssue:
     code: str
@@ -96,6 +99,7 @@ def evaluate_observations(
                     QualityIssue(
                         "missing_months",
                         f"gap of {gap - 1} month(s) before {later.reference_date}",
+                        severity="warning",
                     )
                 )
         elif spec.max_gap_days is not None:
@@ -105,6 +109,7 @@ def evaluate_observations(
                     QualityIssue(
                         "cadence_gap",
                         f"gap of {gap_days} days before {later.reference_date}",
+                        severity="warning",
                     )
                 )
 
@@ -116,6 +121,7 @@ def evaluate_observations(
                         "implausible_change",
                         f"{later.reference_date}: {change_pct:.2f}% change exceeds "
                         f"{spec.max_change_pct:.2f}%",
+                        severity="warning",
                     )
                 )
 
@@ -138,6 +144,20 @@ def evaluate_observations(
         last_observation=ordered[-1].reference_date,
         issues=tuple(issues),
     )
+
+
+def blocking_issues(report: QualityReport, *, policy: str = "warn") -> tuple[QualityIssue, ...]:
+    """Return issues that should stop ingest under the selected policy.
+
+    The assignment explicitly asks malformed individual records to be warned and skipped.  Gaps,
+    cadence anomalies, suspicious jumps and staleness are therefore non-blocking by default.  A
+    production scheduler can opt into ``strict`` to fail on every semantic issue.
+    """
+    if policy not in QUALITY_POLICIES:
+        raise ValueError(f"quality policy must be one of: {', '.join(sorted(QUALITY_POLICIES))}")
+    if policy == "strict":
+        return report.issues
+    return tuple(issue for issue in report.issues if issue.severity == "error")
 
 
 def evaluate_database(

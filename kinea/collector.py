@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import traceback as traceback_module
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
+from .archive import archive_response
 from .client import FetchResult, LiveClient, OfflineClient
 from .config import Config, SeriesSpec
 from .db import create_schema
 from .identifiers import derive_description, derive_name, parse_series_id
 from .models import IngestCounts, Observation
-from .parser import parse_sdmx_csv
-from .quality import DataQualityError, QualityReport, evaluate_observations
+from .parser import ParseResult, parse_sdmx_csv
+from .quality import DataQualityError, QualityReport, blocking_issues, evaluate_observations
 from .vintages import ingest_observations
 
 
@@ -32,6 +36,18 @@ class CollectReport:
     warnings: tuple[str, ...]
     quality_reports: tuple[QualityReport, ...]
     log_text: str
+    run_id: str = ""
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class PreparedSeries:
+    """Fetched and validated payload ready for a short database transaction."""
+
+    spec: SeriesSpec
+    result: FetchResult
+    parsed: ParseResult
+    quality: QualityReport
 
 
 def build_client(
@@ -128,6 +144,42 @@ def _previous_observation(
     return row["reference_date"], float(row["value"])
 
 
+def _series_metric(prepared: PreparedSeries) -> dict[str, object]:
+    result = prepared.result
+    return {
+        "series_id": prepared.spec.series_id,
+        "http_status": result.http_status,
+        "attempts": result.attempt_count,
+        "duration_ms": round(result.duration_ms, 1),
+        "bytes": result.response_bytes or len(result.body.encode("utf-8")),
+        "observations": len(prepared.parsed.observations),
+        "parser_warnings": len(prepared.parsed.warnings),
+        "quality": prepared.quality.status,
+    }
+
+
+def _log_summary(
+    *,
+    mode: str,
+    run_id: str,
+    series: int,
+    counts: IngestCounts,
+    warning_count: int,
+    quality_status: str,
+    quality_issue_count: int,
+    prepared: list[PreparedSeries],
+    dry_run: bool,
+) -> str:
+    metrics = json.dumps([_series_metric(item) for item in prepared], separators=(",", ":"))
+    return (
+        f"run_id={run_id}; mode={mode}; dry_run={str(dry_run).lower()}; series={series}; "
+        f"seen={counts.seen}; inserted={counts.inserted}; revised={counts.revised}; "
+        f"updated_same_day={counts.updated_same_day}; unchanged={counts.unchanged}; "
+        f"warnings={warning_count}; quality={quality_status}; "
+        f"quality_issues={quality_issue_count}; series_metrics={metrics}"
+    )
+
+
 def collect(
     conn: sqlite3.Connection,
     config: Config,
@@ -136,24 +188,36 @@ def collect(
     params: dict[str, str] | None = None,
     collected_at: str | None = None,
     vintage_date: str | None = None,
+    quality_policy: str = "warn",
+    dry_run: bool = False,
+    archive_dir: str | Path | None = None,
+    run_id: str | None = None,
 ) -> CollectReport:
-    """Run one atomic collection and write exactly one log row in ``finally``."""
+    """Fetch/validate first, then apply one short atomic write transaction.
+
+    Normal executions always write exactly one log row in ``finally``.  A dry run deliberately
+    rolls back all changes, including the execution log, and returns the projected ingest counts.
+    """
 
     create_schema(conn)
     started = collected_at or datetime.now(timezone.utc).isoformat()
     vintage = vintage_date or started[:10]
+    collection_id = run_id or uuid4().hex
     counts = IngestCounts()
     warning_messages: list[str] = []
     quality_reports: list[QualityReport] = []
+    prepared_series: list[PreparedSeries] = []
     series_collected = 0
     status = "error"
     log_text = "collection failed before completion"
     traceback_text: str | None = None
 
     try:
-        conn.execute("BEGIN")
+        # Network I/O and semantic validation happen without holding a SQLite write lock.
         for spec in config.series:
             result = client.fetch(spec, params=params)
+            if archive_dir is not None:
+                archive_response(archive_dir, spec, result, run_id=collection_id)
             parsed = parse_sdmx_csv(result.body, expected_external_id=spec.external_id)
             warning_messages.extend(f"{spec.series_id}: {message}" for message in parsed.warnings)
             previous_row = (
@@ -171,14 +235,24 @@ def collect(
                 previous=previous,
             )
             quality_reports.append(quality)
+            blocked = blocking_issues(quality, policy=quality_policy)
             warning_messages.extend(
                 f"{spec.series_id}: quality {issue.code}: {issue.message}"
                 for issue in quality.issues
-                if issue.severity == "warning"
+                if issue not in blocked
             )
-            if not quality.passed:
-                details = "; ".join(f"{issue.code}: {issue.message}" for issue in quality.issues)
+            if blocked:
+                details = "; ".join(f"{issue.code}: {issue.message}" for issue in blocked)
                 raise DataQualityError(f"{spec.series_id}: semantic quality gate failed: {details}")
+
+            prepared_series.append(PreparedSeries(spec, result, parsed, quality))
+
+        # Keep the write lock only for the set-based ingest and metadata refresh.
+        conn.execute("BEGIN IMMEDIATE")
+        for prepared in prepared_series:
+            spec = prepared.spec
+            result = prepared.result
+            parsed = prepared.parsed
             _ensure_metadata(conn, spec, result.source_url, started, parsed.last_publish_date)
             series_counts = ingest_observations(
                 conn,
@@ -190,16 +264,23 @@ def collect(
             counts.add(series_counts)
             _refresh_metadata(conn, spec.series_id)
             series_collected += 1
-        conn.commit()
+        if dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
         status = "success"
         quality_issue_count = sum(len(report.issues) for report in quality_reports)
         quality_status = "warning" if quality_issue_count else "pass"
-        log_text = (
-            f"mode={client.mode}; series={series_collected}; seen={counts.seen}; "
-            f"inserted={counts.inserted}; revised={counts.revised}; "
-            f"updated_same_day={counts.updated_same_day}; unchanged={counts.unchanged}; "
-            f"warnings={len(warning_messages)}; quality={quality_status}; "
-            f"quality_issues={quality_issue_count}"
+        log_text = _log_summary(
+            mode=client.mode,
+            run_id=collection_id,
+            series=series_collected,
+            counts=counts,
+            warning_count=len(warning_messages),
+            quality_status=quality_status,
+            quality_issue_count=quality_issue_count,
+            prepared=prepared_series,
+            dry_run=dry_run,
         )
         return CollectReport(
             status=status,
@@ -208,24 +289,34 @@ def collect(
             warnings=tuple(warning_messages),
             quality_reports=tuple(quality_reports),
             log_text=log_text,
+            run_id=collection_id,
+            dry_run=dry_run,
         )
     except Exception as exc:
         conn.rollback()
         traceback_text = traceback_module.format_exc()
         quality_issue_count = sum(len(report.issues) for report in quality_reports)
         quality_status = "error" if isinstance(exc, DataQualityError) else "not_run"
-        log_text = (
-            f"mode={client.mode}; collection aborted after {series_collected} series; "
-            f"quality={quality_status}; quality_issues={quality_issue_count}"
+        log_text = _log_summary(
+            mode=client.mode,
+            run_id=collection_id,
+            series=series_collected,
+            counts=counts,
+            warning_count=len(warning_messages),
+            quality_status=quality_status,
+            quality_issue_count=quality_issue_count,
+            prepared=prepared_series,
+            dry_run=dry_run,
         )
         raise
     finally:
-        finished = datetime.now(timezone.utc).isoformat()
-        conn.execute(
-            """
-            INSERT INTO logs (started_at, finished_at, status, log_text, traceback)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (started, finished, status, log_text, traceback_text),
-        )
-        conn.commit()
+        if not dry_run:
+            finished = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                """
+                INSERT INTO logs (started_at, finished_at, status, log_text, traceback)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (started, finished, status, log_text, traceback_text),
+            )
+            conn.commit()

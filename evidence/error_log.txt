@@ -1,9 +1,9 @@
 id | started_at | finished_at | status | log_text | traceback
 --- | --- | --- | --- | --- | ---
-3 | 2026-07-19T04:44:41.063392+00:00 | 2026-07-19T04:44:41.063887+00:00 | error | mode=offline; collection aborted after 0 series; quality=not_run; quality_issues=0 | Traceback (most recent call last):
-  File "<repo>/kinea/collector.py", line 156, in collect
+3 | 2026-07-19T14:55:14.502314+00:00 | 2026-07-19T14:55:14.502824+00:00 | error | run_id=64a2f6ac36af4893abe62d37f5867f38; mode=offline; dry_run=false; series=0; seen=0; inserted=0; revised=0; updated_same_day=0; unchanged=0; warnings=0; quality=not_run; quality_issues=0; series_metrics=[] | Traceback (most recent call last):
+  File "<repo>/kinea/collector.py", line 218, in collect
     result = client.fetch(spec, params=params)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<repo>/kinea/client.py", line 87, in fetch
+  File "<repo>/kinea/client.py", line 136, in fetch
     raise FetchError(f"fixture not found: {path}")
 kinea.client.FetchError: fixture not found: <repo>/fixtures/missing/EXR.D.CZK.EUR.SP00.A.csv

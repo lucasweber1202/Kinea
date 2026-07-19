@@ -1,0 +1,60 @@
+{
+  "host_status": {
+    "data-api.ecb.europa.eu": 200,
+    "data.ecb.europa.eu": 200
+  },
+  "idempotency_delta": {
+    "logs": 1,
+    "metadata": 0,
+    "time_series": 0
+  },
+  "samples": [
+    {
+      "external_id": "EXR.D.CZK.EUR.SP00.A",
+      "http_status": 200,
+      "match": true,
+      "raw_value": 24.205,
+      "reference_date": "2026-07-17",
+      "series_id": "CZ_FX_EURCZK",
+      "stored_value": 24.205
+    },
+    {
+      "external_id": "HICP.M.CZ.N.XEF000.4D0.INX",
+      "http_status": 200,
+      "match": true,
+      "raw_value": 102.79,
+      "reference_date": "2026-06-01",
+      "series_id": "CZ_HICP_CORE_INDEX",
+      "stored_value": 102.79
+    },
+    {
+      "external_id": "HICP.M.CZ.N.NRGY00.4D0.INX",
+      "http_status": 200,
+      "match": true,
+      "raw_value": 98.54,
+      "reference_date": "2026-06-01",
+      "series_id": "CZ_HICP_ENERGY_INDEX",
+      "stored_value": 98.54
+    },
+    {
+      "external_id": "HICP.M.CZ.N.FOOD00.4D0.INX",
+      "http_status": 200,
+      "match": true,
+      "raw_value": 99.74,
+      "reference_date": "2026-06-01",
+      "series_id": "CZ_HICP_FOOD_INDEX",
+      "stored_value": 99.74
+    },
+    {
+      "external_id": "HICP.M.CZ.N.SERV00.4D0.INX",
+      "http_status": 200,
+      "match": true,
+      "raw_value": 104.1,
+      "reference_date": "2026-06-01",
+      "series_id": "CZ_HICP_SERVICES_INDEX",
+      "stored_value": 104.1
+    }
+  ],
+  "source": "live",
+  "status": "pass"
+}

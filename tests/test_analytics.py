@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kinea.analytics import revision_events, revision_summary
+from kinea.analytics import compare_as_of, publication_lags, revision_events, revision_summary
 from kinea.db import connect
 from kinea.models import Observation
 from kinea.vintages import ingest_observations
@@ -116,3 +116,54 @@ def test_revision_filter_applies_to_events_and_summary():
     assert [row.series_id for row in summary] == ["CZ_HICP_FOOD_INDEX"]
     assert events[0].change == -1.0
     assert events[0].abs_change == 1.0
+
+
+def test_compare_as_of_reports_new_and_revised_observations():
+    conn = connect(":memory:")
+    sid = _seed(conn)
+    ingest_observations(
+        conn,
+        sid,
+        [Observation("2026-05-01", 100.0)],
+        vintage_date="2026-07-01",
+        collected_at="2026-07-01T10:00:00+00:00",
+    )
+    ingest_observations(
+        conn,
+        sid,
+        [Observation("2026-05-01", 101.0), Observation("2026-06-01", 102.0)],
+        vintage_date="2026-07-18",
+        collected_at="2026-07-18T10:00:00+00:00",
+    )
+
+    rows = compare_as_of(conn, "2026-07-10", "2026-07-18")
+
+    assert [(row.reference_date, row.status, row.change) for row in rows] == [
+        ("2026-05-01", "revised", 1.0),
+        ("2026-06-01", "new", None),
+    ]
+
+
+def test_publication_lag_distinguishes_source_and_observation_dates():
+    conn = connect(":memory:")
+    sid = _seed(conn)
+    ingest_observations(
+        conn,
+        sid,
+        [Observation("2026-06-01", 100.0)],
+        vintage_date="2026-07-18",
+        collected_at="2026-07-18T10:00:00+00:00",
+    )
+    conn.execute(
+        """
+        UPDATE metadata
+        SET last_observation='2026-06-01', last_publish_date='2026-07-17'
+        WHERE series_id=?
+        """,
+        (sid,),
+    )
+
+    row = publication_lags(conn)[0]
+
+    assert row.reference_to_publish_days == 46
+    assert row.publish_to_observed_days == 1

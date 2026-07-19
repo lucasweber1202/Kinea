@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 import sys
 import tempfile
@@ -12,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from kinea.analytics import revision_events  # noqa: E402
+from kinea.analytics import compare_as_of, revision_events  # noqa: E402
 from kinea.client import OfflineClient  # noqa: E402
 from kinea.collector import collect  # noqa: E402
 from kinea.config import load_config  # noqa: E402
@@ -64,6 +65,7 @@ REQUIRED_FILES = [
     "fixtures/contracts/HICP.M.CZ.N.SERV00.4D0.INX.csv",
     "tests/test_contracts.py",
     "tests/test_analysis_cli.py",
+    "tests/test_archive.py",
     "tests/test_analytics.py",
     "tests/test_panels.py",
     "tests/test_quality.py",
@@ -71,13 +73,22 @@ REQUIRED_FILES = [
     "tests/test_transforms.py",
     "tests/test_scripts.py",
     "tests/test_dashboard.py",
+    "tests/test_exports.py",
+    "tests/test_features.py",
+    "tests/test_health.py",
+    "tests/test_locking.py",
     "tests/test_config.py",
     "scripts/generate_evidence.py",
     "scripts/check_source_contract.py",
     "scripts/validate_delivery.py",
     "kinea/db.py",
+    "kinea/archive.py",
     "kinea/vintages.py",
     "kinea/analytics.py",
+    "kinea/exports.py",
+    "kinea/features.py",
+    "kinea/health.py",
+    "kinea/locking.py",
     "kinea/panels.py",
     "kinea/quality.py",
     "kinea/transforms.py",
@@ -93,11 +104,16 @@ REQUIRED_FILES = [
     "evidence/as_of_demo.txt",
     "evidence/pit_panel.csv",
     "evidence/pit_panel.parquet",
+    "evidence/feature_panel.csv",
+    "evidence/as_of_diff.txt",
     "evidence/sample_query.sql",
     "evidence/sample_query_output.csv",
     "evidence/success_log.txt",
     "evidence/error_log.txt",
     "evidence/live_validation.txt",
+    "evidence/live_validation.json",
+    "evidence/source_health.txt",
+    "evidence/publication_lag.txt",
     "evidence/revision_demo.db",
     "docs/dashboard-overview.png",
     "docs/dashboard-hicp.png",
@@ -322,6 +338,18 @@ def _run_validation(evidence_dir: Path) -> Validator:
             and revision[0].abs_change == abs(revision[0].change)
             and revision[0].lag_days == 17,
         )
+        differences = compare_as_of(
+            demo,
+            "2026-07-10",
+            "2026-07-18",
+            series_ids=[revised["series_id"]],
+        )
+        result.check(
+            "Point-in-time diff identifies the revision",
+            len(differences) == 1
+            and differences[0].status == "revised"
+            and differences[0].change == history[1]["value"] - history[0]["value"],
+        )
     demo.close()
 
     pit_csv = (evidence_dir / "pit_panel.csv").read_text(encoding="utf-8")
@@ -331,6 +359,13 @@ def _run_validation(evidence_dir: Path) -> Validator:
         and "2026-07-10" in pit_csv
         and "2026-07-18" in pit_csv
         and (evidence_dir / "pit_panel.parquet").stat().st_size > 0,
+    )
+    feature_csv = (evidence_dir / "feature_panel.csv").read_text(encoding="utf-8")
+    result.check(
+        "Vintage-safe feature panel is populated",
+        "knowledge_date,CZ_HICP_CORE_INDEX_YOY" in feature_csv
+        and "2026-07-10" in feature_csv
+        and "2026-07-18" in feature_csv,
     )
 
     dashboard = (ROOT / "dashboard" / "app.py").read_text(encoding="utf-8")
@@ -358,7 +393,19 @@ def _run_validation(evidence_dir: Path) -> Validator:
     cli = (ROOT / "kinea" / "cli.py").read_text(encoding="utf-8")
     result.check(
         "CLI exposes quality and revision analytics",
-        'sub.add_parser("quality"' in cli and 'sub.add_parser("revisions"' in cli,
+        all(
+            f'sub.add_parser("{command}"' in cli
+            for command in (
+                "quality",
+                "revisions",
+                "diff",
+                "export",
+                "features",
+                "source-health",
+                "publication-lag",
+                "verify-archive",
+            )
+        ),
     )
     live = (evidence_dir / "live_validation.txt").read_text(encoding="utf-8")
     result.check(
@@ -366,6 +413,39 @@ def _run_validation(evidence_dir: Path) -> Validator:
         "Status: PASS" in live
         and "HTTP status: 200" in live
         and "live_series_matches: 5/5" in live,
+    )
+    live_json = json.loads((evidence_dir / "live_validation.json").read_text(encoding="utf-8"))
+    samples = live_json.get("samples", [])
+    sample_matches_database = True
+    live_conn = sqlite3.connect(evidence_dir / "kinea.db")
+    for sample in samples:
+        stored = live_conn.execute(
+            """
+            SELECT value FROM time_series
+            WHERE series_id=? AND reference_date=?
+            ORDER BY vintage_date DESC, collected_at DESC LIMIT 1
+            """,
+            (sample["series_id"], sample["reference_date"]),
+        ).fetchone()
+        sample_matches_database &= stored is not None and float(stored[0]) == float(
+            sample["raw_value"]
+        )
+    live_conn.close()
+    result.check(
+        "Structured live proof is fail-closed",
+        live_json.get("status") == "pass"
+        and live_json.get("source") == "live"
+        and live_json.get("host_status")
+        == {"data-api.ecb.europa.eu": 200, "data.ecb.europa.eu": 200}
+        and live_json.get("idempotency_delta") == {"metadata": 0, "time_series": 0, "logs": 1}
+        and len(samples) == 5
+        and all(sample.get("http_status") == 200 and sample.get("match") for sample in samples)
+        and sample_matches_database,
+    )
+    result.check(
+        "Operational health and publication-lag reports exist",
+        "Status: PASS" in (evidence_dir / "source_health.txt").read_text(encoding="utf-8")
+        and "PUBLICATION LAG" in (evidence_dir / "publication_lag.txt").read_text(encoding="utf-8"),
     )
     quality = (evidence_dir / "data_quality.txt").read_text(encoding="utf-8")
     result.check(

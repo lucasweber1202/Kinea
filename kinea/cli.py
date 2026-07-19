@@ -9,6 +9,7 @@ from datetime import date
 from .collector import build_client, collect
 from .config import load_config
 from .db import AS_OF_QUERY, connect, table_counts
+from .locking import RunLockError, execution_lock
 from .panels import as_of_panel, knowledge_date_grid, write_panel
 
 
@@ -23,21 +24,43 @@ def _start_period(months: int | None) -> str | None:
 
 
 def _cmd_collect(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    conn = connect(args.db)
-    client = build_client(config, args.mode, args.fixtures)
-    start = _start_period(args.months)
-    params = {"startPeriod": start} if start and args.mode == "live" else None
     try:
-        report = collect(conn, config, client, params=params)
-    except Exception as exc:
+        config = load_config(args.config).select(args.series)
+        if args.months is not None and (args.start or args.end):
+            raise ValueError("use either --months or --start/--end")
+        start = _start_period(args.months) or args.start
+        if start:
+            date.fromisoformat(start)
+        if args.end:
+            date.fromisoformat(args.end)
+        params = None
+        if args.mode == "live":
+            params = {
+                key: value
+                for key, value in {"startPeriod": start, "endPeriod": args.end}.items()
+                if value
+            } or None
+        with execution_lock(args.db, timeout=args.lock_timeout):
+            conn = connect(args.db)
+            try:
+                client = build_client(config, args.mode, args.fixtures)
+                report = collect(
+                    conn,
+                    config,
+                    client,
+                    params=params,
+                    quality_policy=args.quality_policy,
+                    dry_run=args.dry_run,
+                    archive_dir=args.archive_dir,
+                )
+            finally:
+                conn.close()
+    except (Exception, RunLockError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        conn.close()
         return 1
     print(report.log_text)
     for warning in report.warnings:
         print(f"WARNING: {warning}")
-    conn.close()
     return 0
 
 
@@ -130,7 +153,12 @@ def _cmd_quality(args: argparse.Namespace) -> int:
     reports = evaluate_database(conn, config, as_of=as_of)
     conn.close()
     print(format_quality_report(reports, as_of=as_of))
-    return 0 if all(report.passed for report in reports) else 1
+    passed = (
+        all(not report.issues for report in reports)
+        if args.strict
+        else all(report.passed for report in reports)
+    )
+    return 0 if passed else 1
 
 
 def _cmd_revisions(args: argparse.Namespace) -> int:
@@ -160,6 +188,142 @@ def _cmd_revisions(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_diff(args: argparse.Namespace) -> int:
+    from .analytics import compare_as_of
+
+    conn = connect(args.db)
+    try:
+        rows = compare_as_of(
+            conn,
+            args.left,
+            args.right,
+            series_ids=args.series,
+            include_unchanged=args.include_unchanged,
+        )
+    finally:
+        conn.close()
+    print(
+        "series_id | reference_date | status | left | right | change | left_vintage | right_vintage"
+    )
+    for row in rows:
+        left = "n/a" if row.left_value is None else f"{row.left_value:.10g}"
+        right = "n/a" if row.right_value is None else f"{row.right_value:.10g}"
+        change = "n/a" if row.change is None else f"{row.change:+.6g}"
+        print(
+            f"{row.series_id} | {row.reference_date} | {row.status} | {left} | "
+            f"{right} | {change} | {row.left_vintage} | {row.right_vintage}"
+        )
+    print(f"Differences: {len(rows)}")
+    return 0
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    from .exports import snapshot_rows, write_snapshot
+
+    try:
+        conn = connect(args.db)
+        try:
+            rows = snapshot_rows(conn, as_of=args.as_of, series_ids=args.series)
+        finally:
+            conn.close()
+        destination = write_snapshot(
+            rows,
+            args.output,
+            file_format=args.format,
+            layout=args.layout,
+        )
+    except (RuntimeError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(f"Snapshot export: rows={len(rows)}; layout={args.layout}; output={destination}")
+    return 0
+
+
+def _knowledge_dates(args: argparse.Namespace) -> tuple[str, ...]:
+    if args.as_of:
+        if args.start or args.end:
+            raise ValueError("use either --as-of or --start/--end")
+        return tuple(item for group in args.as_of for item in group.split(",") if item)
+    if not args.start or not args.end:
+        raise ValueError("provide --as-of or both --start and --end")
+    return knowledge_date_grid(args.start, args.end, args.frequency)
+
+
+def _cmd_features(args: argparse.Namespace) -> int:
+    from .features import default_feature_recipes, feature_panel, write_feature_panel
+
+    try:
+        dates = _knowledge_dates(args)
+        config = load_config(args.config).select(args.series)
+        conn = connect(args.db)
+        try:
+            rows = feature_panel(conn, dates, default_feature_recipes(config))
+        finally:
+            conn.close()
+        destination = write_feature_panel(
+            rows,
+            args.output,
+            file_format=args.format,
+            layout=args.layout,
+        )
+    except (RuntimeError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"Feature panel: rows={len(rows)}; knowledge_dates={len(set(row.knowledge_date for row in rows))}; "
+        f"output={destination}"
+    )
+    return 0
+
+
+def _cmd_source_health(args: argparse.Namespace) -> int:
+    from .client import LiveClient
+    from .health import format_source_health, source_health
+
+    config = load_config(args.config).select(args.series)
+    conn = connect(args.db)
+    try:
+        report = source_health(
+            conn,
+            config,
+            as_of=args.as_of,
+            live_client=LiveClient(config) if args.live else None,
+        )
+    finally:
+        conn.close()
+    print(format_source_health(report))
+    return 0 if report.status == "pass" else 1
+
+
+def _cmd_publication_lag(args: argparse.Namespace) -> int:
+    from .analytics import publication_lags
+
+    conn = connect(args.db)
+    try:
+        rows = publication_lags(conn)
+    finally:
+        conn.close()
+    print(
+        "series_id | reference_date | publish_date | first_observed | "
+        "reference_to_publish_days | publish_to_observed_days"
+    )
+    for row in rows:
+        print(
+            f"{row.series_id} | {row.reference_date} | {row.publish_date} | "
+            f"{row.first_observed_vintage} | {row.reference_to_publish_days} | "
+            f"{row.publish_to_observed_days}"
+        )
+    return 0
+
+
+def _cmd_verify_archive(args: argparse.Namespace) -> int:
+    from .archive import verify_archive
+
+    valid = verify_archive(args.manifest)
+    print(f"Archive: {'PASS' if valid else 'FAIL'}")
+    return 0 if valid else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kinea")
     parser.add_argument("--config", default=None)
@@ -170,6 +334,13 @@ def main(argv: list[str] | None = None) -> int:
     collect_parser.add_argument("--mode", choices=("live", "offline"), default="live")
     collect_parser.add_argument("--fixtures")
     collect_parser.add_argument("--months", type=int)
+    collect_parser.add_argument("--start", help="Inclusive source start period")
+    collect_parser.add_argument("--end", help="Inclusive source end period")
+    collect_parser.add_argument("--series", action="append", help="Collect only this series ID")
+    collect_parser.add_argument("--dry-run", action="store_true", help="Plan changes and roll back")
+    collect_parser.add_argument("--quality-policy", choices=("warn", "strict"), default="warn")
+    collect_parser.add_argument("--archive-dir", help="Optional raw payload archive directory")
+    collect_parser.add_argument("--lock-timeout", type=float, default=0.0)
     collect_parser.set_defaults(func=_cmd_collect)
 
     status_parser = sub.add_parser("status")
@@ -208,12 +379,59 @@ def main(argv: list[str] | None = None) -> int:
     quality_parser = sub.add_parser("quality", help="Run the semantic data-quality gate")
     quality_parser.add_argument("--db", required=True)
     quality_parser.add_argument("--as-of", help="Reference date for freshness (default: today)")
+    quality_parser.add_argument("--strict", action="store_true", help="Treat warnings as failures")
     quality_parser.set_defaults(func=_cmd_quality)
 
     revisions_parser = sub.add_parser("revisions", help="Revision analytics from vintage history")
     revisions_parser.add_argument("--db", required=True)
     revisions_parser.add_argument("--series", help="Optional series filter")
     revisions_parser.set_defaults(func=_cmd_revisions)
+
+    diff_parser = sub.add_parser("diff", help="Compare two point-in-time snapshots")
+    diff_parser.add_argument("--db", required=True)
+    diff_parser.add_argument("--from", dest="left", required=True)
+    diff_parser.add_argument("--to", dest="right", required=True)
+    diff_parser.add_argument("--series", action="append")
+    diff_parser.add_argument("--include-unchanged", action="store_true")
+    diff_parser.set_defaults(func=_cmd_diff)
+
+    export_parser = sub.add_parser("export", help="Export current or as-of data")
+    export_parser.add_argument("--db", required=True)
+    export_parser.add_argument("--as-of")
+    export_parser.add_argument("--series", action="append")
+    export_parser.add_argument("--layout", choices=("long", "wide"), default="long")
+    export_parser.add_argument("--format", choices=("csv", "parquet", "feather"), default="csv")
+    export_parser.add_argument("--output", required=True)
+    export_parser.set_defaults(func=_cmd_export)
+
+    features_parser = sub.add_parser("features", help="Export vintage-safe modeling features")
+    features_parser.add_argument("--db", required=True)
+    features_parser.add_argument("--as-of", action="append")
+    features_parser.add_argument("--start")
+    features_parser.add_argument("--end")
+    features_parser.add_argument(
+        "--frequency", choices=("daily", "weekly", "monthly"), default="monthly"
+    )
+    features_parser.add_argument("--series", action="append")
+    features_parser.add_argument("--layout", choices=("long", "wide"), default="wide")
+    features_parser.add_argument("--format", choices=("csv", "parquet", "feather"), default="csv")
+    features_parser.add_argument("--output", required=True)
+    features_parser.set_defaults(func=_cmd_features)
+
+    health_parser = sub.add_parser("source-health", help="Operational source and database health")
+    health_parser.add_argument("--db", required=True)
+    health_parser.add_argument("--as-of")
+    health_parser.add_argument("--series", action="append")
+    health_parser.add_argument("--live", action="store_true", help="Probe the live ECB API")
+    health_parser.set_defaults(func=_cmd_source_health)
+
+    lag_parser = sub.add_parser("publication-lag", help="Publication and observation lag report")
+    lag_parser.add_argument("--db", required=True)
+    lag_parser.set_defaults(func=_cmd_publication_lag)
+
+    archive_parser = sub.add_parser("verify-archive", help="Verify a raw payload manifest")
+    archive_parser.add_argument("--manifest", required=True)
+    archive_parser.set_defaults(func=_cmd_verify_archive)
 
     args = parser.parse_args(argv)
     return args.func(args)

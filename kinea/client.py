@@ -7,7 +7,9 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
+from random import uniform
 
 from .config import Config, SeriesSpec
 
@@ -22,6 +24,31 @@ class FetchResult:
     source_url: str
     http_status: int
     fetched_at: str
+    attempt_count: int = 1
+    duration_ms: float = 0.0
+    response_bytes: int = 0
+    response_headers: tuple[tuple[str, str], ...] = ()
+    raw_body: bytes | None = None
+
+
+def _retry_after_seconds(headers, *, now: datetime | None = None) -> float | None:
+    """Parse Retry-After as seconds or an HTTP date."""
+    if not headers:
+        return None
+    raw = headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        try:
+            target = parsedate_to_datetime(str(raw))
+            current = now or datetime.now(timezone.utc)
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=timezone.utc)
+            return max(0.0, (target - current).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return None
 
 
 class LiveClient:
@@ -34,11 +61,13 @@ class LiveClient:
         timeout: float = 30.0,
         attempts: int = 3,
         backoff_seconds: float = 1.0,
+        jitter_fraction: float = 0.2,
     ) -> None:
         self.config = config
         self.timeout = timeout
         self.attempts = attempts
         self.backoff_seconds = backoff_seconds
+        self.jitter_fraction = jitter_fraction
 
     def fetch(self, spec: SeriesSpec, params: dict[str, str] | None = None) -> FetchResult:
         url = spec.request_url(self.config.base_url, params)
@@ -46,29 +75,51 @@ class LiveClient:
             url,
             headers={
                 "Accept": "text/csv",
-                "User-Agent": "kinea-ecb-collector/2.0 (+technical-assignment)",
+                "User-Agent": "kinea-ecb-collector/2.2 (+technical-assignment)",
             },
         )
         last_error: Exception | None = None
+        started = time.monotonic()
+        retry_after: float | None = None
         for attempt in range(1, self.attempts + 1):
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    body = response.read().decode("utf-8-sig")
+                    raw_body = response.read()
+                    body = raw_body.decode("utf-8-sig")
                     status = int(getattr(response, "status", 200))
+                    headers = tuple(
+                        sorted(
+                            (str(key), str(value))
+                            for key, value in getattr(response, "headers", {}).items()
+                        )
+                    )
                 return FetchResult(
                     body=body,
                     source_url=url,
                     http_status=status,
                     fetched_at=datetime.now(timezone.utc).isoformat(),
+                    attempt_count=attempt,
+                    duration_ms=(time.monotonic() - started) * 1000.0,
+                    response_bytes=len(raw_body),
+                    response_headers=headers,
+                    raw_body=raw_body,
                 )
             except urllib.error.HTTPError as exc:
                 last_error = exc
+                retry_after = _retry_after_seconds(exc.headers)
                 if exc.code not in {429, 500, 502, 503, 504}:
                     break
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 last_error = exc
             if attempt < self.attempts:
-                time.sleep(self.backoff_seconds * (2 ** (attempt - 1)))
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else self.backoff_seconds * (2 ** (attempt - 1))
+                )
+                if retry_after is None and delay > 0 and self.jitter_fraction > 0:
+                    delay += uniform(0.0, delay * self.jitter_fraction)
+                time.sleep(delay)
         raise FetchError(
             f"ECB request failed after {self.attempts} attempts: {url}"
         ) from last_error
@@ -85,9 +136,12 @@ class OfflineClient:
         path = self.fixtures_dir / f"{spec.external_id}.csv"
         if not path.exists():
             raise FetchError(f"fixture not found: {path}")
+        raw_body = path.read_bytes()
         return FetchResult(
-            body=path.read_text(encoding="utf-8-sig"),
+            body=raw_body.decode("utf-8-sig"),
             source_url=spec.request_url("https://data-api.ecb.europa.eu/service/data"),
             http_status=200,
             fetched_at=datetime.now(timezone.utc).isoformat(),
+            response_bytes=len(raw_body),
+            raw_body=raw_body,
         )

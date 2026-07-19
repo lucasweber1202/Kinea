@@ -79,3 +79,103 @@ def test_quality_cli_returns_success_for_clean_database(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "Status: PASS" in output
     assert "RESULT: PASS" in output
+
+
+def test_diff_and_export_cli(tmp_path, capsys):
+    database = tmp_path / "analysis.db"
+    conn = connect(database)
+    _add_revision(conn, "CZ_HICP_CORE_INDEX")
+    conn.commit()
+    conn.close()
+
+    assert (
+        main(
+            [
+                "diff",
+                "--db",
+                str(database),
+                "--from",
+                "2026-07-10",
+                "--to",
+                "2026-07-18",
+            ]
+        )
+        == 0
+    )
+    assert "revised" in capsys.readouterr().out
+    output = tmp_path / "snapshot.csv"
+    assert (
+        main(
+            [
+                "export",
+                "--db",
+                str(database),
+                "--as-of",
+                "2026-07-10",
+                "--layout",
+                "wide",
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert output.exists()
+    assert "Snapshot export" in capsys.readouterr().out
+
+
+def test_collect_cli_can_select_one_series_and_dry_run(tmp_path, capsys):
+    database = tmp_path / "dry-run.db"
+    assert (
+        main(
+            [
+                "collect",
+                "--db",
+                str(database),
+                "--mode",
+                "offline",
+                "--fixtures",
+                str(ROOT / "fixtures" / "v2"),
+                "--series",
+                "CZ_HICP_CORE_INDEX",
+                "--dry-run",
+            ]
+        )
+        == 0
+    )
+    conn = connect(database)
+    assert conn.execute("SELECT COUNT(*) FROM metadata").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0] == 0
+    assert "dry_run=true" in capsys.readouterr().out
+
+
+def test_feature_and_source_health_cli(tmp_path, capsys):
+    database = tmp_path / "health.db"
+    conn = connect(database)
+    config = load_config()
+    collect(
+        conn,
+        config,
+        OfflineClient(ROOT / "fixtures" / "v2"),
+        collected_at="2026-07-18T10:00:00+00:00",
+    )
+    conn.close()
+
+    feature_output = tmp_path / "features.csv"
+    assert (
+        main(
+            [
+                "features",
+                "--db",
+                str(database),
+                "--as-of",
+                "2026-07-18",
+                "--output",
+                str(feature_output),
+            ]
+        )
+        == 0
+    )
+    assert feature_output.exists()
+    assert main(["source-health", "--db", str(database), "--as-of", "2026-07-18"]) == 0
+    assert "Status: PASS" in capsys.readouterr().out

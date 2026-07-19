@@ -1,5 +1,5 @@
 [PASS] Python version supported - 3.12.13
-[PASS] Required files exist - 59 files
+[PASS] Required files exist - 74 files
 [PASS] Dashboard screenshots are non-empty
 [PASS] Database opens successfully - ok
 [PASS] metadata table exists
@@ -26,12 +26,16 @@
 [PASS] Current view returns revised value
 [PASS] Point-in-time panel contains no look-ahead
 [PASS] Revision analytics report signed change, magnitude, and observed lag
+[PASS] Point-in-time diff identifies the revision
 [PASS] Modeling panel artifacts are populated
+[PASS] Vintage-safe feature panel is populated
 [PASS] Dashboard reads the mandatory schema
 [PASS] Dashboard exposes all six required sections
 [PASS] Dashboard semantics and exports are review-ready
 [PASS] CLI exposes quality and revision analytics
 [PASS] Live ECB validation passed
+[PASS] Structured live proof is fail-closed
+[PASS] Operational health and publication-lag reports exist
 [PASS] Semantic data-quality gate passed
 
 DELIVERY STATUS: READY

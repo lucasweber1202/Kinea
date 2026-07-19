@@ -1,0 +1,6 @@
+POINT-IN-TIME DIFFERENCE
+========================
+series_id | reference_date | status | left_value | right_value | change
+CZ_HICP_CORE_INDEX | 2026-06-01 | revised | 102.79 | 103.0 | +0.21
+
+RESULT: PASS

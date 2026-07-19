@@ -356,11 +356,12 @@ def main() -> None:
                 "transformed values — only what the ECB publishes."
             )
             hicp_ids = [s for s in metadata["series_id"] if "_HICP_" in s]
-            hero = current[current["series_id"].isin(hicp_ids)]
-            hero = hero[
-                hero["reference_date"] >= hero["reference_date"].max() - pd.DateOffset(years=10)
+            hero_full = current[current["series_id"].isin(hicp_ids)]
+            hero_yoy = add_yoy(hero_full, 12)
+            hero_yoy = hero_yoy[
+                hero_yoy["reference_date"]
+                >= hero_yoy["reference_date"].max() - pd.DateOffset(years=10)
             ]
-            hero_yoy = add_yoy(hero, 12)
             if not hero_yoy.empty:
                 st.altair_chart(
                     line_chart(hero_yoy, "% change vs a year earlier", ".1f", 360), width="stretch"
@@ -412,9 +413,17 @@ def main() -> None:
                 "- unchanged value → no new row · revision → new vintage · same-day fix → update in place"
             )
             with st.expander("Official ECB endpoints"):
+                endpoints = metadata[["name", "last_publish_date", "source_url"]].copy()
+                endpoints["last_publish_date"] = endpoints["last_publish_date"].fillna(
+                    "Not supplied by SDMX response"
+                )
                 st.dataframe(
-                    metadata[["name", "source_url"]].rename(
-                        columns={"name": "Series", "source_url": "Endpoint"}
+                    endpoints.rename(
+                        columns={
+                            "name": "Series",
+                            "last_publish_date": "Source publish date",
+                            "source_url": "Endpoint",
+                        }
                     ),
                     hide_index=True,
                     width="stretch",
@@ -483,19 +492,21 @@ def main() -> None:
                     "ECB component levels are not seasonally adjusted; short-horizon changes "
                     "can contain recurring seasonal effects."
                 )
-            latest = hicp.sort_values("reference_date").groupby("series_id").tail(1).copy()
+            latest = shown.sort_values("reference_date").groupby("series_id").tail(1).copy()
             latest["Series"] = latest["series_id"].map(_short)
+            latest["View"] = view
             latest["reference_date"] = latest["reference_date"].dt.date
             latest["vintage_date"] = latest["vintage_date"].dt.date
             st.dataframe(
-                latest[["Series", "reference_date", "value", "vintage_date"]].rename(
+                latest[["Series", "View", "reference_date", "value", "vintage_date"]].rename(
                     columns={
                         "reference_date": "Reference date",
-                        "value": "Index",
+                        "value": "Displayed value",
                         "vintage_date": "Vintage",
                     }
                 ),
                 hide_index=True,
+                height=178,
                 width="stretch",
             )
             st.download_button(

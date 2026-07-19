@@ -120,3 +120,23 @@ def test_primary_key_prevents_duplicate_vintage_rows():
             "INSERT INTO time_series VALUES (?, ?, ?, ?, ?)",
             (SERIES, "2026-01-01", "2026-02-10", 100.0, "2026-02-10T11:00:00+00:00"),
         )
+
+
+def test_ingest_loads_existing_vintages_once_per_series():
+    conn = _conn()
+    observations = [Observation(f"2026-01-{day:02d}", float(day)) for day in range(1, 29)]
+    statements = []
+    conn.set_trace_callback(statements.append)
+
+    ingest_observations(
+        conn,
+        SERIES,
+        observations,
+        vintage_date="2026-02-10",
+        collected_at="2026-02-10T10:00:00+00:00",
+    )
+
+    selects = [
+        statement for statement in statements if statement.lstrip().upper().startswith("SELECT")
+    ]
+    assert len(selects) == 1

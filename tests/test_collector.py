@@ -169,3 +169,51 @@ def test_zero_valid_observations_is_a_grave_failure():
     log = conn.execute("SELECT status, traceback FROM logs").fetchone()
     assert log["status"] == "error"
     assert "zero valid observations" in log["traceback"]
+
+
+def test_dry_run_reports_changes_without_writing_any_row():
+    conn = connect(":memory:")
+    report = collect(
+        conn,
+        load_config(),
+        OfflineClient(ROOT / "fixtures" / "v1"),
+        collected_at="2026-07-18T10:00:00+00:00",
+        dry_run=True,
+    )
+
+    assert report.dry_run
+    assert report.counts.inserted > 0
+    assert table_counts(conn) == {"metadata": 0, "time_series": 0, "logs": 0}
+
+
+def test_fetch_phase_does_not_hold_a_database_transaction():
+    conn = connect(":memory:")
+    states = []
+
+    class InspectingClient(OfflineClient):
+        def fetch(self, spec, params=None):
+            states.append(conn.in_transaction)
+            return super().fetch(spec, params)
+
+    collect(
+        conn,
+        load_config(),
+        InspectingClient(ROOT / "fixtures" / "v1"),
+        collected_at="2026-07-18T10:00:00+00:00",
+    )
+
+    assert states == [False] * 5
+
+
+def test_structured_run_metrics_are_recorded_in_log_text():
+    conn = connect(":memory:")
+    collect(
+        conn,
+        load_config(),
+        OfflineClient(ROOT / "fixtures" / "v1"),
+        collected_at="2026-07-18T10:00:00+00:00",
+        run_id="test-run",
+    )
+    text = conn.execute("SELECT log_text FROM logs").fetchone()[0]
+    assert "run_id=test-run" in text
+    assert 'series_metrics=[{"series_id":"CZ_FX_EURCZK"' in text

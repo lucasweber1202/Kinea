@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import shutil
 import subprocess
 import sys
@@ -17,10 +18,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from kinea.analytics import compare_as_of, publication_lags  # noqa: E402
 from kinea.client import FetchError, LiveClient, OfflineClient  # noqa: E402
 from kinea.collector import collect  # noqa: E402
 from kinea.config import load_config  # noqa: E402
 from kinea.db import AS_OF_QUERY, CURRENT_QUERY, SCHEMA_SQL, connect, table_counts  # noqa: E402
+from kinea.features import default_feature_recipes, feature_panel, write_feature_panel  # noqa: E402
+from kinea.health import format_source_health, source_health  # noqa: E402
 from kinea.models import Observation  # noqa: E402
 from kinea.panels import as_of_panel, write_panel  # noqa: E402
 from kinea.parser import parse_sdmx_csv  # noqa: E402
@@ -56,6 +60,12 @@ SELECT m.series_id, m.name, m.frequency, m.unit,
 
 def _write(name: str, content: str) -> None:
     (EVIDENCE / name).write_text(content.rstrip() + "\n", encoding="utf-8")
+
+
+def _write_json(name: str, payload) -> None:
+    (EVIDENCE / name).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def _format_rows(rows, columns: list[str]) -> str:
@@ -159,6 +169,9 @@ def _build_live(config):
     before = table_counts(conn)
     repeat = _collect_quietly(conn, config, LiveClient(config))
     after = table_counts(conn)
+    delta = {key: after[key] - before[key] for key in before}
+    if delta != {"metadata": 0, "time_series": 0, "logs": 1}:
+        raise RuntimeError(f"live idempotency failed: {delta}")
     return conn, first, repeat, before, after, "live"
 
 
@@ -399,6 +412,36 @@ def main() -> None:
     )
     write_panel(panel_rows, EVIDENCE / "pit_panel.csv", "csv")
     write_panel(panel_rows, EVIDENCE / "pit_panel.parquet", "parquet")
+    feature_rows = feature_panel(
+        demo,
+        ["2026-07-10", "2026-07-18"],
+        default_feature_recipes(config.select(["CZ_HICP_CORE_INDEX"])),
+    )
+    write_feature_panel(feature_rows, EVIDENCE / "feature_panel.csv", layout="wide")
+    differences = compare_as_of(
+        demo,
+        "2026-07-10",
+        "2026-07-18",
+        series_ids=["CZ_HICP_CORE_INDEX"],
+    )
+    _write(
+        "as_of_diff.txt",
+        "\n".join(
+            [
+                "POINT-IN-TIME DIFFERENCE",
+                "========================",
+                "series_id | reference_date | status | left_value | right_value | change",
+                *[
+                    f"{row.series_id} | {row.reference_date} | {row.status} | "
+                    f"{row.left_value} | {row.right_value} | "
+                    f"{'n/a' if row.change is None else f'{row.change:+.6g}'}"
+                    for row in differences
+                ],
+                "",
+                f"RESULT: {'PASS' if differences else 'FAIL'}",
+            ]
+        ),
+    )
     demo.close()
 
     _write("sample_query.sql", SAMPLE_QUERY)
@@ -476,6 +519,13 @@ def main() -> None:
 
     if source_kind == "live":
         live_samples, portal_status = _validate_live_samples(conn, config)
+        live_delta = {key: after[key] - before[key] for key in before}
+        if portal_status != 200:
+            raise RuntimeError(f"ECB portal returned HTTP {portal_status}")
+        if len(live_samples) != len(config.series):
+            raise RuntimeError("live validation did not cover the complete configured catalogue")
+        if any(item["http_status"] != 200 or not item["match"] for item in live_samples):
+            raise RuntimeError("one or more live ECB samples do not match the generated database")
         sample_columns = [
             "series_id",
             "external_id",
@@ -508,6 +558,16 @@ def main() -> None:
                 "Source endpoints are stored in metadata.source_url.",
             ]
         )
+        live_payload = {
+            "status": "pass",
+            "source": "live",
+            "host_status": {
+                "data-api.ecb.europa.eu": 200,
+                "data.ecb.europa.eu": portal_status,
+            },
+            "idempotency_delta": live_delta,
+            "samples": live_samples,
+        }
     else:
         live_text = """LIVE ECB VALIDATION
 ===================
@@ -515,13 +575,37 @@ Status: PENDING - live validation is intentionally not run in isolated offline m
 This isolated database was built from deterministic SDMX-CSV fixtures.
 Run: python scripts/generate_evidence.py --mode live
 """
+        live_payload = {"status": "pending", "source": "offline", "samples": []}
     _write("live_validation.txt", live_text)
+    _write_json("live_validation.json", live_payload)
     quality_as_of = conn.execute("SELECT MAX(vintage_date) FROM time_series").fetchone()[0]
     quality_reports = evaluate_database(conn, config, as_of=quality_as_of)
     quality_text = format_quality_report(quality_reports, as_of=quality_as_of)
     _write("data_quality.txt", quality_text)
     if any(not report.passed for report in quality_reports):
         raise RuntimeError("generated database failed the semantic data-quality gate")
+    health = source_health(conn, config, as_of=quality_as_of)
+    _write("source_health.txt", format_source_health(health))
+    lag_rows = publication_lags(conn)
+    _write(
+        "publication_lag.txt",
+        "\n".join(
+            [
+                "PUBLICATION LAG",
+                "===============",
+                "series_id | reference_date | publish_date | first_observed | "
+                "reference_to_publish_days | publish_to_observed_days",
+                *[
+                    f"{row.series_id} | {row.reference_date} | {row.publish_date} | "
+                    f"{row.first_observed_vintage} | {row.reference_to_publish_days} | "
+                    f"{row.publish_to_observed_days}"
+                    for row in lag_rows
+                ],
+                "",
+                "Note: NULL publish dates mean the ECB SDMX response did not expose a source date.",
+            ]
+        ),
+    )
     conn.execute("VACUUM")
     conn.close()
     if atomic_live:

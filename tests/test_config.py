@@ -18,3 +18,11 @@ def test_base_url_override_must_be_absolute(monkeypatch):
 
     with pytest.raises(ValueError, match="absolute HTTP"):
         load_config()
+
+
+def test_config_can_select_a_validated_series_subset():
+    subset = load_config().select(["CZ_FX_EURCZK"])
+
+    assert [item.series_id for item in subset.series] == ["CZ_FX_EURCZK"]
+    with pytest.raises(ValueError, match="unknown series_id"):
+        load_config().select(["CZ_UNKNOWN"])

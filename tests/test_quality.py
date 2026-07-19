@@ -85,3 +85,32 @@ def test_semantic_quality_failure_rolls_back_and_is_logged():
     assert log["status"] == "error"
     assert "quality=error" in log["log_text"]
     assert "above_maximum" in log["traceback"]
+
+
+def test_malformed_month_is_warned_and_does_not_abort_default_collection():
+    class OneMalformedMonthClient:
+        mode = "live"
+
+        def fetch(self, spec, params=None):
+            del params
+            if spec.frequency == "daily":
+                rows = [("2026-03-01", 24.0), ("bad-date", 24.1), ("2026-03-03", 24.2)]
+            else:
+                rows = [("2026-01", 100.0), ("bad-date", 101.0), ("2026-03", 102.0)]
+            body = "KEY,TIME_PERIOD,OBS_VALUE\n" + "".join(
+                f"{spec.external_id},{period},{value}\n" for period, value in rows
+            )
+            return FetchResult(body, "https://example.test", 200, "2026-03-31T10:00:00+00:00")
+
+    conn = connect(":memory:")
+    with pytest.warns(RuntimeWarning):
+        report = collect(
+            conn,
+            load_config(),
+            OneMalformedMonthClient(),
+            collected_at="2026-03-31T10:00:00+00:00",
+        )
+
+    assert report.status == "success"
+    assert any("missing_months" in warning for warning in report.warnings)
+    assert table_counts(conn)["metadata"] == 5
