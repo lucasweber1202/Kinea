@@ -322,6 +322,10 @@ def main() -> None:
             f'<span class="pill">Data through {latest_reference.date()}</span>',
             unsafe_allow_html=True,
         )
+    st.caption(
+        "New to this dataset? Start with **Overview** for the headline series, then "
+        "**Vintages** to see a revision kept as two coexisting rows instead of overwritten."
+    )
     st.write("")
 
     revisions = max(len(revision_history) - len(revision_current), 0)
@@ -734,6 +738,11 @@ def main() -> None:
             "Reconstruct what we knew on a chosen date: the latest vintage of each "
             "observation with `vintage_date ≤ as-of`. Same ROW_NUMBER query as the current view."
         )
+        if demo_used:
+            st.info(
+                "Showing `evidence/revision_demo.db` — a labelled, simulated revision. The "
+                "official values in `evidence/kinea.db` are never modified."
+            )
         vintage_dates = sorted(revision_history["vintage_date"].dropna().dt.date.unique())
         if not vintage_dates:
             st.info("No vintage is available for an as-of query yet.")

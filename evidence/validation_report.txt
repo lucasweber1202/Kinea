@@ -1,4 +1,4 @@
-[PASS] Python version supported - 3.12.13
+[PASS] Python version supported - 3.12.1
 [PASS] Required files exist - 74 files
 [PASS] Dashboard screenshots are non-empty
 [PASS] Database opens successfully - ok

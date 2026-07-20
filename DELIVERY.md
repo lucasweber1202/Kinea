@@ -41,7 +41,7 @@ network-independent.
   mixed-frequency EUR/CZK aggregation.
 - Presentation: six Streamlit sections, seven CSV exports, source coverage, vintages, as-of view,
   and execution audit.
-- Automated quality gate: 111 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
+- Automated quality gate: 114 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
   fail-closed delivery validator.
 
 ## Evidence map
