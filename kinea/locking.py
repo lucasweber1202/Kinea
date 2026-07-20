@@ -13,6 +13,32 @@ class RunLockError(RuntimeError):
     """Raised when another collector owns the database lock."""
 
 
+def _prepare_windows_lock_byte(handle) -> None:
+    """Ensure every Windows process locks the same existing byte at offset zero."""
+    handle.seek(0, os.SEEK_END)
+    if handle.tell() == 0:
+        handle.write(b"\0")
+        handle.flush()
+    handle.seek(0)
+
+
+def _try_lock_windows(handle, msvcrt_module) -> bool:
+    _prepare_windows_lock_byte(handle)
+    try:
+        msvcrt_module.locking(handle.fileno(), msvcrt_module.LK_NBLCK, 1)
+        return True
+    except OSError:
+        return False
+
+
+def _unlock_windows(handle, msvcrt_module) -> None:
+    try:
+        handle.seek(0)
+        msvcrt_module.locking(handle.fileno(), msvcrt_module.LK_UNLCK, 1)
+    except OSError:
+        pass
+
+
 def _try_lock(handle) -> bool:
     try:
         import fcntl
@@ -22,11 +48,7 @@ def _try_lock(handle) -> bool:
     except ImportError:  # pragma: no cover - Windows fallback
         import msvcrt
 
-        try:
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            return True
-        except OSError:
-            return False
+        return _try_lock_windows(handle, msvcrt)
     except BlockingIOError:
         return False
 
@@ -39,11 +61,7 @@ def _unlock(handle) -> None:
     except ImportError:  # pragma: no cover - Windows fallback
         import msvcrt
 
-        try:
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        except OSError:
-            pass
+        _unlock_windows(handle, msvcrt)
 
 
 @contextmanager
