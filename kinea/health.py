@@ -19,6 +19,7 @@ class SeriesHealth:
     last_observation: str | None
     live_status: int | None
     live_rows: int | None
+    live_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,11 @@ def source_health(
     as_of: str | None = None,
     live_client: LiveClient | None = None,
 ) -> SourceHealth:
-    """Evaluate database health and optionally probe every configured live series."""
+    """Evaluate database health and optionally probe every configured live series.
+
+    Live failures are isolated per series so one unavailable endpoint never hides the health of
+    the remaining sources.
+    """
     check_date = as_of or date.today().isoformat()
     reports = {
         report.series_id: report for report in evaluate_database(conn, config, as_of=check_date)
@@ -52,11 +57,15 @@ def source_health(
     for spec in config.series:
         live_status = None
         live_rows = None
+        live_error = None
         if live_client is not None:
-            response = live_client.fetch(spec, {"lastNObservations": "3"})
-            parsed = parse_sdmx_csv(response.body, expected_external_id=spec.external_id)
-            live_status = response.http_status
-            live_rows = len(parsed.observations)
+            try:
+                response = live_client.fetch(spec, {"lastNObservations": "3"})
+                parsed = parse_sdmx_csv(response.body, expected_external_id=spec.external_id)
+                live_status = response.http_status
+                live_rows = len(parsed.observations)
+            except Exception as exc:  # health reports must continue across independent sources
+                live_error = f"{type(exc).__name__}: {exc}"
         report = reports[spec.series_id]
         rows.append(
             SeriesHealth(
@@ -65,10 +74,12 @@ def source_health(
                 last_observation=report.last_observation,
                 live_status=live_status,
                 live_rows=live_rows,
+                live_error=live_error,
             )
         )
     healthy = all(
         row.quality != "error"
+        and row.live_error is None
         and (row.live_status is None or row.live_status == 200)
         and (row.live_rows is None or row.live_rows > 0)
         for row in rows
@@ -92,7 +103,7 @@ def format_source_health(report: SourceHealth) -> str:
         f"Latest success: {report.latest_success or 'none'}",
         f"Latest error: {report.latest_error or 'none'}",
         "",
-        "series_id | quality | last_observation | live_status | live_rows",
+        "series_id | quality | last_observation | live_status | live_rows | live_error",
     ]
     lines.extend(
         " | ".join(
@@ -102,6 +113,7 @@ def format_source_health(report: SourceHealth) -> str:
                 str(row.last_observation),
                 str(row.live_status),
                 str(row.live_rows),
+                row.live_error or "",
             ]
         )
         for row in report.series
