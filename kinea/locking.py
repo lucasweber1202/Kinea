@@ -65,7 +65,9 @@ def _unlock(handle) -> None:
 
 
 @contextmanager
-def execution_lock(database: str | Path, *, timeout: float = 0.0) -> Iterator[Path | None]:
+def execution_lock(
+    database: str | Path, *, timeout: float = 0.0
+) -> Iterator[Path | None]:
     """Prevent concurrent CLI runs against the same SQLite file."""
     if str(database) == ":memory:":
         yield None
