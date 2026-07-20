@@ -57,10 +57,12 @@ def test_calendar_aligned_yoy_refuses_a_missing_t_minus_12_month():
     conn = _metadata_database()
     references = ["2024-12-01"]
     references.extend(
-        date(2025 + month // 12, month % 12 + 1, 1).isoformat() for month in range(1, 13)
+        date(2025 + month // 12, month % 12 + 1, 1).isoformat()
+        for month in range(1, 13)
     )
     observations = [
-        Observation(reference, 100.0 + index) for index, reference in enumerate(references)
+        Observation(reference, 100.0 + index)
+        for index, reference in enumerate(references)
     ]
     ingest_observations(
         conn,
@@ -80,7 +82,9 @@ def test_calendar_aligned_yoy_refuses_a_missing_t_minus_12_month():
     assert feature_panel(conn, ["2026-02-15"], [recipe]) == ()
 
     default = next(
-        item for item in default_feature_recipes(load_config()) if item.series_id == SERIES
+        item
+        for item in default_feature_recipes(load_config())
+        if item.series_id == SERIES
     )
     assert default.period_unit == "calendar_months"
 
