@@ -11,8 +11,11 @@ dashboard = ["streamlit==1.59.2", "altair==6.2.2", "pandas==3.0.3"]
 modeling = ["pandas==3.0.3", "pyarrow==24.0.0"]
 dev = [
     "pytest==9.1.1",
+    "pytest-cov==7.1.0",
     "matplotlib==3.10.8",
     "ruff==0.15.22",
+    "mypy==2.3.0",
+    "pandas-stubs==3.0.3.260530",
     "hypothesis==6.156.9",
     # The suite exercises scripts/generate_evidence.py, which writes the parquet
     # point-in-time panel, so the modeling stack is a genuine test dependency.
@@ -28,6 +31,17 @@ packages = ["kinea"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov=kinea --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["kinea"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
 
 [tool.ruff]
 line-length = 100
@@ -35,3 +49,16 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "B"]
+
+[tool.mypy]
+# Left unpinned so mypy always parses stub files (e.g. numpy's, pulled in transitively via
+# pandas-stubs) with the grammar of whichever interpreter is running it -- pinning this to
+# the package's minimum-supported 3.11 makes mypy reject numpy's unconditional PEP 695
+# `type` aliases, which is a stub-parsing limitation, not a real 3.11-compatibility issue
+# in this project's own code.
+files = ["kinea", "dashboard", "scripts"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = false

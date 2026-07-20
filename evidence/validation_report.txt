@@ -1,5 +1,5 @@
-[PASS] Python version supported - 3.12.1
-[PASS] Required files exist - 74 files
+[PASS] Python version supported - 3.12
+[PASS] Required files exist - 75 files
 [PASS] Dashboard screenshots are non-empty
 [PASS] Database opens successfully - ok
 [PASS] metadata table exists

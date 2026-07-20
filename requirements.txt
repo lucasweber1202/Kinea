@@ -13,5 +13,8 @@ matplotlib==3.10.8
 
 # Tests
 pytest==9.1.1
+pytest-cov==7.1.0
 ruff==0.15.22
+mypy==2.3.0
+pandas-stubs==3.0.3.260530
 hypothesis==6.156.9

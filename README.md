@@ -45,7 +45,10 @@ python scripts/validate_delivery.py
 python -m streamlit run dashboard/app.py
 ```
 
-After installation, the equivalent one-command verification is `make verify`.
+After installation, the equivalent one-command verification is `make verify` (Ruff format/lint,
+mypy, the test suite with an enforced coverage floor, and the delivery validator). A
+`.pre-commit-config.yaml` is included to run the same formatting/lint/type checks automatically
+before each commit (`pre-commit install` once, after installing `pre-commit` itself).
 
 The committed delivery contains a live ECB database and pre-generated evidence, so the validator
 does not need network access. A successful validation prints a `PASS` line for every invariant and

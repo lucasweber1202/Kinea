@@ -88,7 +88,7 @@ def overview(metadata, current, logs, demo_current, demo_history):
     for index, (label, value, color) in enumerate(metrics):
         _card(fig, 0.045 + index * 0.235, 0.76, 0.215, 0.115, label, value, color)
 
-    ax = fig.add_axes([0.06, 0.29, 0.56, 0.39], facecolor="white")
+    ax = fig.add_axes((0.06, 0.29, 0.56, 0.39), facecolor="white")
     hicp = current[current.series_id.str.contains("_HICP_")]
     for color, (series_id, frame) in zip(PALETTE, hicp.groupby("series_id"), strict=False):
         frame = frame.sort_values("reference_date")
@@ -115,7 +115,7 @@ def overview(metadata, current, logs, demo_current, demo_history):
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     ax.legend(loc="upper left", frameon=False, ncol=2, fontsize=9)
 
-    ax_table = fig.add_axes([0.66, 0.29, 0.30, 0.39], facecolor="white")
+    ax_table = fig.add_axes((0.66, 0.29, 0.30, 0.39), facecolor="white")
     ax_table.axis("off")
     ax_table.text(
         0,
@@ -220,7 +220,7 @@ def as_of_preview(metadata, demo_current, demo_history, old):
         color="#067647",
     )
 
-    ax_bar = fig.add_axes([0.07, 0.34, 0.33, 0.34], facecolor="white")
+    ax_bar = fig.add_axes((0.07, 0.34, 0.33, 0.34), facecolor="white")
     bars = ax_bar.bar(
         ["1 Jul 2026", "18 Jul 2026"], detail.value, color=["#98A2B3", BLUE], width=0.55
     )
@@ -234,7 +234,7 @@ def as_of_preview(metadata, demo_current, demo_history, old):
     ax_bar.bar_label(bars, fmt="%.2f", padding=5, color=NAVY, weight="bold")
     ax_bar.tick_params(colors="#667085")
 
-    ax_line = fig.add_axes([0.47, 0.34, 0.48, 0.34], facecolor="white")
+    ax_line = fig.add_axes((0.47, 0.34, 0.48, 0.34), facecolor="white")
     ax_line.plot(
         current_series.reference_date,
         current_series.value,
@@ -300,7 +300,7 @@ def hicp_preview(metadata, current):
         fontsize=12,
         color="#667085",
     )
-    ax = fig.add_axes([0.06, 0.29, 0.61, 0.50], facecolor="white")
+    ax = fig.add_axes((0.06, 0.29, 0.61, 0.50), facecolor="white")
     latest_rows = []
     for color, (series_id, frame) in zip(PALETTE, hicp.groupby("series_id"), strict=False):
         frame = frame.sort_values("reference_date")
@@ -318,7 +318,7 @@ def hicp_preview(metadata, current):
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     ax.legend(frameon=False, loc="upper left", ncol=2)
 
-    table_ax = fig.add_axes([0.71, 0.29, 0.25, 0.50], facecolor="white")
+    table_ax = fig.add_axes((0.71, 0.29, 0.25, 0.50), facecolor="white")
     table_ax.axis("off")
     table_ax.text(
         0,
@@ -384,7 +384,7 @@ def fx_preview(metadata, current):
     _card(fig, 0.275, 0.76, 0.205, 0.105, "UNIT", meta.unit, TEAL)
     _card(fig, 0.505, 0.76, 0.205, 0.105, "OBSERVATIONS", f"{len(fx):,}", ORANGE)
     _card(fig, 0.735, 0.76, 0.205, 0.105, "LATEST", f"{fx.iloc[-1].value:.3f}", BLUE)
-    ax = fig.add_axes([0.06, 0.22, 0.90, 0.45], facecolor="white")
+    ax = fig.add_axes((0.06, 0.22, 0.90, 0.45), facecolor="white")
     ax.plot(fx.reference_date, fx.value, color=BLUE, linewidth=1.7)
     ax.fill_between(fx.reference_date, fx.value, fx.value.min() - 0.5, color=BLUE, alpha=0.07)
     ax.set_title(
@@ -450,7 +450,7 @@ def vintages_preview(metadata, demo_history):
         fontsize=11,
         color="#B54708",
     )
-    ax = fig.add_axes([0.07, 0.27, 0.36, 0.38], facecolor="white")
+    ax = fig.add_axes((0.07, 0.27, 0.36, 0.38), facecolor="white")
     bars = ax.bar(
         [str(value.date()) for value in detail.vintage_date],
         detail.value,
@@ -466,7 +466,7 @@ def vintages_preview(metadata, demo_history):
     ax.spines[["top", "right", "left"]].set_visible(False)
     ax.bar_label(bars, fmt="%.2f", padding=5, weight="bold", color=NAVY)
     ax.tick_params(colors="#667085")
-    ax_table = fig.add_axes([0.50, 0.27, 0.45, 0.38], facecolor="white")
+    ax_table = fig.add_axes((0.50, 0.27, 0.45, 0.38), facecolor="white")
     ax_table.axis("off")
     ax_table.text(
         0,
@@ -552,7 +552,7 @@ def audit_preview(metadata, current, logs):
         else "REVIEW"
     )
     _card(fig, 0.735, 0.76, 0.205, 0.105, "DATA QUALITY", quality, TEAL)
-    ax = fig.add_axes([0.06, 0.31, 0.90, 0.35], facecolor="white")
+    ax = fig.add_axes((0.06, 0.31, 0.90, 0.35), facecolor="white")
     ax.axis("off")
     ax.text(
         0, 1.05, "Execution log", fontsize=14, weight="bold", color=NAVY, transform=ax.transAxes

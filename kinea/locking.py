@@ -23,7 +23,10 @@ def _try_lock(handle) -> bool:
         import msvcrt
 
         try:
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            # typeshed's msvcrt stub is empty on non-Windows platforms, so mypy can't see
+            # these attributes when checked from Linux/macOS; the branch itself only runs
+            # on Windows, where the real module provides them.
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
             return True
         except OSError:
             return False
@@ -41,7 +44,7 @@ def _unlock(handle) -> None:
 
         try:
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
         except OSError:
             pass
 

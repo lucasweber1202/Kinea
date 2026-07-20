@@ -27,7 +27,9 @@ jobs:
         run: |
           python -m ruff format --check .
           python -m ruff check .
-      - name: Run tests, including the dashboard contract
+      - name: Check types
+        run: python -m mypy
+      - name: Run tests, including the dashboard contract and coverage gate
         run: python -m pytest -q
       - name: Validate committed evidence
         run: python scripts/validate_delivery.py

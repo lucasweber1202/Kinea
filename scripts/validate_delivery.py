@@ -52,6 +52,7 @@ REQUIRED_FILES = [
     "Makefile",
     "pyproject.toml",
     "requirements.txt",
+    ".pre-commit-config.yaml",
     ".env.example",
     ".streamlit/config.toml",
     "config/series.json",
@@ -150,7 +151,11 @@ def _required_path(relative_path: str, evidence_dir: Path) -> Path:
 
 def _run_validation(evidence_dir: Path) -> Validator:
     result = Validator()
-    result.check("Python version supported", sys.version_info >= (3, 11), sys.version.split()[0])
+    result.check(
+        "Python version supported",
+        sys.version_info >= (3, 11),
+        f"{sys.version_info.major}.{sys.version_info.minor}",
+    )
     missing = [path for path in REQUIRED_FILES if not _required_path(path, evidence_dir).exists()]
     result.check(
         "Required files exist",

@@ -1,6 +1,13 @@
 import pytest
 
-from kinea.identifiers import derive_description, derive_name, parse_series_id
+from kinea.config import load_config
+from kinea.identifiers import (
+    COUNTRY_NAMES,
+    TOKEN_LABELS,
+    derive_description,
+    derive_name,
+    parse_series_id,
+)
 
 
 def test_parse_series_id_components():
@@ -69,3 +76,26 @@ def test_description_preserves_identifier_tokens():
 def test_eur_czk_acronym_is_preserved():
     assert "EUR/CZK" in derive_name("CZ_FX_EURCZK")
     assert "EUR/CZK" in derive_description("CZ_FX_EURCZK")
+
+
+def test_production_catalogue_round_trips_without_editing_this_module():
+    """Guards the open-vocabulary design: every series_id actually shipped in
+    config/series.json must parse and derive a name/description through this module
+    exactly as committed, with no change here required to support it.
+
+    Also asserts every token used by the *current* production catalogue has a curated
+    TOKEN_LABELS entry rather than silently falling back to a title-cased guess — the
+    fallback exists for future series (see test_unrecognized_family_and_qualifier_
+    still_parse), but today's five series should still render with their intended
+    human-readable labels.
+    """
+    config = load_config()
+    assert len(config.series) >= 5
+    for spec in config.series:
+        parts = parse_series_id(spec.series_id)
+        assert parts.country == "CZ"
+        assert all(token in COUNTRY_NAMES or token in TOKEN_LABELS for token in parts.tokens)
+        name = derive_name(spec.series_id)
+        description = derive_description(spec.series_id)
+        assert name.startswith("Czechia - ")
+        assert spec.series_id in description

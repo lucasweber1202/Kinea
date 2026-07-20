@@ -8,6 +8,7 @@ install:
 lint:
 	$(PYTHON) -m ruff format --check .
 	$(PYTHON) -m ruff check .
+	$(PYTHON) -m mypy
 
 test:
 	$(PYTHON) -m pytest -q

@@ -41,8 +41,8 @@ network-independent.
   mixed-frequency EUR/CZK aggregation.
 - Presentation: six Streamlit sections, seven CSV exports, source coverage, vintages, as-of view,
   and execution audit.
-- Automated quality gate: 114 tests, Ruff formatting/lint, Python 3.11/3.12 CI matrix, and a
-  fail-closed delivery validator.
+- Automated quality gate: 115 tests (85%+ branch coverage, enforced), Ruff formatting/lint, mypy,
+  Python 3.11/3.12 CI matrix, and a fail-closed delivery validator.
 
 ## Evidence map
 
@@ -78,8 +78,10 @@ network-independent.
 - Offline fixtures write to an isolated directory and cannot replace the committed live database.
 - Secrets are not required. `.env` is ignored; `.env.example` documents the optional endpoint
   override.
-- GitHub Actions tests Python 3.11 and 3.12, checks formatting and lint, runs the dashboard
-  contract, property-based invariants, and validates committed evidence.
+- GitHub Actions tests Python 3.11 and 3.12, checks formatting/lint/types (Ruff, mypy), runs the
+  dashboard contract, property-based invariants, an enforced coverage floor, and validates
+  committed evidence. A local `pre-commit` config (`.pre-commit-config.yaml`) runs the same
+  formatting/lint/type checks before a commit is made.
 - A weekly opt-in network job detects external-ID or SDMX-column drift without making ordinary
   pull requests depend on ECB availability.
 
@@ -107,5 +109,5 @@ changes official values in `evidence/kinea.db`.
 - [x] Selective/ranged/dry-run collection and raw payload archive
 - [x] Short transaction, batched ingest, execution lock and Retry-After handling
 - [x] Source-health and publication-lag reporting
-- [x] Automated tests and fail-closed delivery validator
+- [x] Automated tests, coverage floor, type checking, and fail-closed delivery validator
 - [x] Reproducible ZIP, directly clonable Git bundle, checksums, and coherent `2.2.0` version
