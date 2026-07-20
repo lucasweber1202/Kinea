@@ -18,14 +18,21 @@ from .db import create_schema
 from .identifiers import derive_description, derive_name, parse_series_id
 from .models import IngestCounts, Observation
 from .parser import ParseResult, parse_sdmx_csv
-from .quality import DataQualityError, QualityReport, blocking_issues, evaluate_observations
+from .quality import (
+    DataQualityError,
+    QualityReport,
+    blocking_issues,
+    evaluate_observations,
+)
 from .vintages import ingest_observations
 
 
 class Client(Protocol):
     mode: str
 
-    def fetch(self, spec: SeriesSpec, params: dict[str, str] | None = None) -> FetchResult: ...
+    def fetch(
+        self, spec: SeriesSpec, params: dict[str, str] | None = None
+    ) -> FetchResult: ...
 
 
 @dataclass(frozen=True)
@@ -170,7 +177,9 @@ def _log_summary(
     prepared: list[PreparedSeries],
     dry_run: bool,
 ) -> str:
-    metrics = json.dumps([_series_metric(item) for item in prepared], separators=(",", ":"))
+    metrics = json.dumps(
+        [_series_metric(item) for item in prepared], separators=(",", ":")
+    )
     return (
         f"run_id={run_id}; mode={mode}; dry_run={str(dry_run).lower()}; series={series}; "
         f"seen={counts.seen}; inserted={counts.inserted}; revised={counts.revised}; "
@@ -195,10 +204,9 @@ def collect(
 ) -> CollectReport:
     """Fetch/validate first, then apply one short atomic write transaction.
 
-    Normal executions always write exactly one log row in ``finally``.  A dry run deliberately
-    rolls back all changes, including the execution log, and returns the projected ingest counts.
+    Normal executions always write exactly one log row in ``finally``. A dry run produces no
+    persistent side effects: database changes, execution logs and raw-payload archives are skipped.
     """
-
     create_schema(conn)
     started = collected_at or datetime.now(timezone.utc).isoformat()
     vintage = vintage_date or started[:10]
@@ -216,10 +224,12 @@ def collect(
         # Network I/O and semantic validation happen without holding a SQLite write lock.
         for spec in config.series:
             result = client.fetch(spec, params=params)
-            if archive_dir is not None:
+            if archive_dir is not None and not dry_run:
                 archive_response(archive_dir, spec, result, run_id=collection_id)
             parsed = parse_sdmx_csv(result.body, expected_external_id=spec.external_id)
-            warning_messages.extend(f"{spec.series_id}: {message}" for message in parsed.warnings)
+            warning_messages.extend(
+                f"{spec.series_id}: {message}" for message in parsed.warnings
+            )
             previous_row = (
                 None
                 if not parsed.observations
@@ -242,9 +252,12 @@ def collect(
                 if issue not in blocked
             )
             if blocked:
-                details = "; ".join(f"{issue.code}: {issue.message}" for issue in blocked)
-                raise DataQualityError(f"{spec.series_id}: semantic quality gate failed: {details}")
-
+                details = "; ".join(
+                    f"{issue.code}: {issue.message}" for issue in blocked
+                )
+                raise DataQualityError(
+                    f"{spec.series_id}: semantic quality gate failed: {details}"
+                )
             prepared_series.append(PreparedSeries(spec, result, parsed, quality))
 
         # Keep the write lock only for the set-based ingest and metadata refresh.
@@ -253,7 +266,9 @@ def collect(
             spec = prepared.spec
             result = prepared.result
             parsed = prepared.parsed
-            _ensure_metadata(conn, spec, result.source_url, started, parsed.last_publish_date)
+            _ensure_metadata(
+                conn, spec, result.source_url, started, parsed.last_publish_date
+            )
             series_counts = ingest_observations(
                 conn,
                 spec.series_id,
@@ -264,10 +279,12 @@ def collect(
             counts.add(series_counts)
             _refresh_metadata(conn, spec.series_id)
             series_collected += 1
+
         if dry_run:
             conn.rollback()
         else:
             conn.commit()
+
         status = "success"
         quality_issue_count = sum(len(report.issues) for report in quality_reports)
         quality_status = "warning" if quality_issue_count else "pass"
