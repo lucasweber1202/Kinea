@@ -45,7 +45,8 @@ def source_health(
     """
     check_date = as_of or date.today().isoformat()
     reports = {
-        report.series_id: report for report in evaluate_database(conn, config, as_of=check_date)
+        report.series_id: report
+        for report in evaluate_database(conn, config, as_of=check_date)
     }
     latest_success = conn.execute(
         "SELECT MAX(finished_at) FROM logs WHERE status='success'"
@@ -61,10 +62,13 @@ def source_health(
         if live_client is not None:
             try:
                 response = live_client.fetch(spec, {"lastNObservations": "3"})
-                parsed = parse_sdmx_csv(response.body, expected_external_id=spec.external_id)
+                parsed = parse_sdmx_csv(
+                    response.body, expected_external_id=spec.external_id
+                )
                 live_status = response.http_status
                 live_rows = len(parsed.observations)
-            except Exception as exc:  # health reports must continue across independent sources
+            # Health reports must continue across independent sources.
+            except Exception as exc:
                 live_error = f"{type(exc).__name__}: {exc}"
         report = reports[spec.series_id]
         rows.append(
