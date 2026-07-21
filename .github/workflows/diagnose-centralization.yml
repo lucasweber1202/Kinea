@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - integration/centralize-main
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
