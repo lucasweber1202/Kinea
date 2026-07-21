@@ -38,18 +38,17 @@ def ingest_observations(
     materialized = tuple(observations)
     latest_rows = conn.execute(
         """
-        WITH ranked AS (
+        SELECT reference_date, value, vintage_date, max_series_vintage
+        FROM (
             SELECT reference_date, value, vintage_date, collected_at,
                    ROW_NUMBER() OVER (
                        PARTITION BY reference_date
                        ORDER BY vintage_date DESC, collected_at DESC
-                   ) AS rn
+                   ) AS rn,
+                   MAX(vintage_date) OVER () AS max_series_vintage
             FROM time_series
             WHERE series_id = ?
-        )
-        SELECT reference_date, value, vintage_date,
-               MAX(vintage_date) OVER () AS max_series_vintage
-        FROM ranked
+        ) ranked
         WHERE rn = 1
         """,
         (series_id,),
