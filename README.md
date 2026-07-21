@@ -11,7 +11,7 @@ historical as-of queries, and presents the result in a Streamlit dashboard.
 The collector in `kinea/` uses only the Python standard library. Dashboard and test dependencies
 are optional extras. No API key or secret is required.
 
-Release and package version are both `2.2.0`.
+Release and package version are both `2.3.0`.
 
 For a compact release checklist and evidence map, see [`DELIVERY.md`](DELIVERY.md).
 
