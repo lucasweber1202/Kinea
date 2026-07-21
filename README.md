@@ -211,11 +211,21 @@ python scripts/generate_evidence.py --mode live
 python scripts/validate_delivery.py
 ```
 
-`docs/dashboard-*.png` are genuine captures of the live Streamlit app and are refreshed by hand
-after a UI change — no committed script reproduces them, so none can silently replace them with a
-lower-fidelity approximation. `scripts/generate_dashboard_previews.py` is a separate, optional,
-matplotlib-only quick look at the same database (no Streamlit launch needed); it writes to
-`evidence/dashboard_preview/`, never to `docs/`.
+`docs/dashboard-*.png` are real headless-browser captures of the live Streamlit app — every
+control, tooltip, and chart exactly as a reviewer would see it — reproduced by:
+
+```bash
+python -m pip install -e ".[dashboard,screenshots]"
+python -m playwright install --with-deps chromium   # one-time browser download
+python -m streamlit run dashboard/app.py -- --db evidence/kinea.db \
+  --server.headless true --server.port 8501 &
+python scripts/capture_dashboard_screenshots.py
+```
+
+`scripts/generate_dashboard_previews.py` is a separate, optional, matplotlib-only quick look at
+the same database (no Streamlit launch or browser needed) for a fast sanity check; it writes to
+`evidence/dashboard_preview/`, never to `docs/`, so it can never silently replace the real
+captures with a lower-fidelity approximation.
 
 Offline evidence is written to an isolated directory and never replaces the committed live
 database:

@@ -66,6 +66,56 @@ def test_random_revision_sequences_preserve_history_without_lookahead(values):
     assert [row.vintage_date for row in panel] == [item[0] for item in retained]
 
 
+@given(st.lists(st.tuples(st.booleans(), FINITE_VALUES), min_size=1, max_size=15))
+@settings(max_examples=50, deadline=1_000)
+def test_random_same_day_and_cross_day_sequences_match_reference_replay(steps):
+    """Fuzzes rule 4 (same-day update-in-place) interleaved with rules 1-3, which the other
+    property test never exercises: it always advances vintage_date by one day per call, so no
+    two of its calls ever share a vintage_date. Each step is (repeat_today, value); True re-uses
+    the previous call's vintage_date (the same-day path), False advances to the next calendar
+    day (the cross-day/revision path). A plain Python replay of the four literal rules is
+    compared row-for-row against what ingest_observations actually wrote, including that an
+    earlier day's row is left untouched by a later same-day update.
+    """
+    conn = _conn()
+    day = date(2026, 1, 1)
+    reference: list[list] = []  # [vintage_date, value], one entry per distinct vintage_date
+
+    for index, (repeat_today, value) in enumerate(steps):
+        if index > 0 and not repeat_today:
+            day += timedelta(days=1)
+        vintage = day.isoformat()
+        # Strictly increasing regardless of how many same-day repeats occur, so "latest
+        # collection of the day wins" is never ambiguous.
+        collected_at = f"2026-01-01T00:{index:02d}:00+00:00"
+
+        ingest_observations(
+            conn,
+            SERIES,
+            [Observation("2025-12-01", value)],
+            vintage_date=vintage,
+            collected_at=collected_at,
+        )
+
+        if reference and reference[-1][0] == vintage:
+            if not values_equal(reference[-1][1], value):
+                reference[-1][1] = value  # rule 4: same-day update in place
+        else:
+            latest_value = reference[-1][1] if reference else None
+            if latest_value is None or not values_equal(latest_value, value):
+                reference.append([vintage, value])  # rules 1/3: first seen, or a real revision
+            # else: unchanged on a new day -> rule 2, no-op, nothing appended
+
+    stored = conn.execute(
+        "SELECT vintage_date, value FROM time_series WHERE series_id = ? ORDER BY vintage_date",
+        (SERIES,),
+    ).fetchall()
+    assert [row["vintage_date"] for row in stored] == [item[0] for item in reference]
+    assert all(
+        values_equal(row["value"], item[1]) for row, item in zip(stored, reference, strict=True)
+    )
+
+
 @given(st.lists(FINITE_VALUES, min_size=1, max_size=10))
 @settings(max_examples=20, deadline=1_000)
 def test_random_unchanged_reruns_are_idempotent(values):
