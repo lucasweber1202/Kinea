@@ -31,21 +31,21 @@ def ingest_observations(
     vintage_date: str,
     collected_at: str,
 ) -> IngestCounts:
-    """Store observations without destroying history or duplicating unchanged values."""
-
+    """Store observations without destroying history or backfilling historical knowledge."""
     date.fromisoformat(vintage_date)
     datetime.fromisoformat(collected_at.replace("Z", "+00:00"))
     counts = IngestCounts()
     materialized = tuple(observations)
     latest_rows = conn.execute(
         """
-        SELECT reference_date, value, vintage_date
+        SELECT reference_date, value, vintage_date, max_series_vintage
         FROM (
             SELECT reference_date, value, vintage_date, collected_at,
                    ROW_NUMBER() OVER (
                        PARTITION BY reference_date
                        ORDER BY vintage_date DESC, collected_at DESC
-                   ) AS rn
+                   ) AS rn,
+                   MAX(vintage_date) OVER () AS max_series_vintage
             FROM time_series
             WHERE series_id = ?
         ) ranked
@@ -53,6 +53,10 @@ def ingest_observations(
         """,
         (series_id,),
     ).fetchall()
+    latest_series_vintage = None if not latest_rows else latest_rows[0]["max_series_vintage"]
+    if latest_series_vintage is not None and vintage_date < latest_series_vintage:
+        raise ValueError("non-monotonic vintage_date: historical knowledge cannot be backfilled")
+
     latest_by_reference = {
         row["reference_date"]: (float(row["value"]), row["vintage_date"]) for row in latest_rows
     }
@@ -94,10 +98,6 @@ def ingest_observations(
             continue
 
         latest = latest_by_reference.get(reference)
-        if latest is not None and vintage_date < latest[1]:
-            raise ValueError(
-                "non-monotonic vintage_date: historical knowledge cannot be backfilled"
-            )
         if latest is not None and values_equal(latest[0], observation.value):
             counts.unchanged += 1
             continue

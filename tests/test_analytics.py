@@ -66,21 +66,21 @@ def test_revision_event_first_versus_latest_and_lag():
 def test_revision_summary_aggregates_per_series():
     conn = connect(":memory:")
     sid = _seed(conn)
-    for ref, first, second in [("2026-05-01", 100.0, 99.0), ("2026-06-01", 100.0, 103.0)]:
-        ingest_observations(
-            conn,
-            sid,
-            [Observation(ref, first)],
-            vintage_date="2026-07-01",
-            collected_at="2026-07-01T10:00:00+00:00",
-        )
-        ingest_observations(
-            conn,
-            sid,
-            [Observation(ref, second)],
-            vintage_date="2026-07-18",
-            collected_at="2026-07-18T10:00:00+00:00",
-        )
+    revisions = [("2026-05-01", 100.0, 99.0), ("2026-06-01", 100.0, 103.0)]
+    ingest_observations(
+        conn,
+        sid,
+        [Observation(ref, first) for ref, first, _ in revisions],
+        vintage_date="2026-07-01",
+        collected_at="2026-07-01T10:00:00+00:00",
+    )
+    ingest_observations(
+        conn,
+        sid,
+        [Observation(ref, second) for ref, _, second in revisions],
+        vintage_date="2026-07-18",
+        collected_at="2026-07-18T10:00:00+00:00",
+    )
     summary = revision_summary(conn)
     assert len(summary) == 1
     row = summary[0]
