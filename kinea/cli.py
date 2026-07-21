@@ -162,29 +162,99 @@ def _cmd_quality(args: argparse.Namespace) -> int:
 
 
 def _cmd_revisions(args: argparse.Namespace) -> int:
-    from .analytics import revision_events, revision_summary
+    from .analytics import revision_events, revision_reliability, revision_summary
 
     conn = connect(args.db)
     events = revision_events(conn, args.series)
-    if not events:
+    if events:
+        print("series_id | reference_date | vintages | first | latest | change | pct | lag_days")
+        for event in events:
+            pct = "n/a" if event.pct_change is None else f"{event.pct_change:+.2f}%"
+            print(
+                f"{event.series_id} | {event.reference_date} | {event.n_vintages} | "
+                f"{event.first_value} | {event.latest_value} | {event.change:+.4g} | "
+                f"{pct} | {event.lag_days}"
+            )
+        print("\nsummary:")
+        for row in revision_summary(conn, args.series):
+            pct = "n/a" if row.mean_pct_revision is None else f"{row.mean_pct_revision:+.2f}%"
+            print(
+                f"  {row.series_id}: revised={row.n_revised} mean|change|={row.mean_abs_revision:.4g} "
+                f"max|change|={row.max_abs_revision:.4g} mean_lag={row.mean_lag_days:.1f}d "
+                f"mean_change={row.mean_revision:+.4g} ({row.n_upward}up/{row.n_downward}down) "
+                f"mean_pct_change={pct}"
+            )
+    else:
         print("No multi-vintage observations found.")
-        conn.close()
-        return 0
-    print("series_id | reference_date | vintages | first | latest | change | pct | lag_days")
-    for event in events:
-        pct = "n/a" if event.pct_change is None else f"{event.pct_change:+.2f}%"
+    print("\nreliability (trust in the latest print, vs. this series' own typical move):")
+    for reliability in revision_reliability(conn, args.series):
+        nts = "n/a" if reliability.noise_to_signal is None else f"{reliability.noise_to_signal:.2f}"
         print(
-            f"{event.series_id} | {event.reference_date} | {event.n_vintages} | "
-            f"{event.first_value} | {event.latest_value} | {event.change:+.4g} | "
-            f"{pct} | {event.lag_days}"
-        )
-    print("\nsummary:")
-    for row in revision_summary(conn, args.series):
-        print(
-            f"  {row.series_id}: revised={row.n_revised} mean|change|={row.mean_abs_revision:.4g} "
-            f"max|change|={row.max_abs_revision:.4g} mean_lag={row.mean_lag_days:.1f}d"
+            f"  {reliability.series_id}: revised={reliability.n_revised}/{reliability.n_observations} "
+            f"noise_to_signal={nts} bias={reliability.bias_direction}"
         )
     conn.close()
+    return 0
+
+
+def _cmd_passthrough(args: argparse.Namespace) -> int:
+    from .econometrics import fx_passthrough
+
+    conn = connect(args.db)
+    result = fx_passthrough(
+        conn, args.series, fx_series_id=args.fx_series, max_lag_months=args.max_lag
+    )
+    conn.close()
+    corr = "n/a" if result.best_correlation is None else f"{result.best_correlation:+.3f}"
+    elasticity = "n/a" if result.elasticity is None else f"{result.elasticity:+.3f}"
+    print(f"{result.hicp_series_id} vs {result.fx_series_id} MoM%, lags 0..{args.max_lag}:")
+    print(
+        f"  best lag: {result.best_lag_months}mo | correlation: {corr} | elasticity: {elasticity}"
+    )
+    print("  lag_months | correlation | n_pairs")
+    for entry in result.by_lag:
+        entry_corr = "n/a" if entry.correlation is None else f"{entry.correlation:+.3f}"
+        print(f"  {entry.lag_months:>10} | {entry_corr:>11} | {entry.n_pairs}")
+    return 0
+
+
+def _cmd_diffusion(args: argparse.Namespace) -> int:
+    from .econometrics import diffusion_index
+
+    conn = connect(args.db)
+    readings = diffusion_index(conn, args.series)
+    conn.close()
+    if not readings:
+        print("No months with a computable diffusion reading.")
+        return 0
+    print("reference_date | accel | decel | flat | diffusion | dominant_component")
+    for row in readings:
+        index = "n/a" if row.diffusion_index is None else f"{row.diffusion_index:.2f}"
+        dominant = row.dominant_component or "n/a"
+        print(
+            f"{row.reference_date} | {row.n_accelerating} | {row.n_decelerating} | "
+            f"{row.n_flat} | {index} | {dominant}"
+        )
+    return 0
+
+
+def _cmd_base_effects(args: argparse.Namespace) -> int:
+    from .econometrics import base_effect_decomposition
+
+    conn = connect(args.db)
+    readings = base_effect_decomposition(conn, args.series)
+    conn.close()
+    if not readings:
+        print("Not enough history for a base-effect decomposition (needs 13+ monthly points).")
+        return 0
+    print("reference_date | yoy% | yoy_change_pp | fresh_momentum% | base_effect%")
+    for row in readings:
+        change = "n/a" if row.yoy_change_pct is None else f"{row.yoy_change_pct:+.2f}"
+        base = "n/a" if row.base_effect_pct is None else f"{row.base_effect_pct:+.2f}"
+        print(
+            f"{row.reference_date} | {row.yoy_pct:+.2f} | {change} | "
+            f"{row.fresh_momentum_pct:+.2f} | {base}"
+        )
     return 0
 
 
@@ -386,6 +456,31 @@ def main(argv: list[str] | None = None) -> int:
     revisions_parser.add_argument("--db", required=True)
     revisions_parser.add_argument("--series", help="Optional series filter")
     revisions_parser.set_defaults(func=_cmd_revisions)
+
+    passthrough_parser = sub.add_parser(
+        "passthrough", help="EUR/CZK to HICP-component pass-through by lag"
+    )
+    passthrough_parser.add_argument("--db", required=True)
+    passthrough_parser.add_argument("--series", required=True, help="HICP component series_id")
+    passthrough_parser.add_argument("--fx-series", default="CZ_FX_EURCZK")
+    passthrough_parser.add_argument("--max-lag", type=int, default=6, help="Months to test")
+    passthrough_parser.set_defaults(func=_cmd_passthrough)
+
+    diffusion_parser = sub.add_parser(
+        "diffusion", help="Month-by-month breadth of HICP component acceleration"
+    )
+    diffusion_parser.add_argument("--db", required=True)
+    diffusion_parser.add_argument(
+        "--series", action="append", help="Optional HICP series filter (default: all HICP_*)"
+    )
+    diffusion_parser.set_defaults(func=_cmd_diffusion)
+
+    base_effects_parser = sub.add_parser(
+        "base-effects", help="Decompose YoY swings into base effect vs. fresh momentum"
+    )
+    base_effects_parser.add_argument("--db", required=True)
+    base_effects_parser.add_argument("--series", required=True)
+    base_effects_parser.set_defaults(func=_cmd_base_effects)
 
     diff_parser = sub.add_parser("diff", help="Compare two point-in-time snapshots")
     diff_parser.add_argument("--db", required=True)

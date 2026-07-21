@@ -1,10 +1,10 @@
 PUBLICATION LAG
 ===============
 series_id | reference_date | publish_date | first_observed | reference_to_publish_days | publish_to_observed_days
-CZ_FX_EURCZK | 2026-07-17 | None | 2026-07-19 | None | None
-CZ_HICP_CORE_INDEX | 2026-06-01 | None | 2026-07-19 | None | None
-CZ_HICP_ENERGY_INDEX | 2026-06-01 | None | 2026-07-19 | None | None
-CZ_HICP_FOOD_INDEX | 2026-06-01 | None | 2026-07-19 | None | None
-CZ_HICP_SERVICES_INDEX | 2026-06-01 | None | 2026-07-19 | None | None
+CZ_FX_EURCZK | 2026-07-20 | None | 2026-07-21 | None | None
+CZ_HICP_CORE_INDEX | 2026-06-01 | None | 2026-07-21 | None | None
+CZ_HICP_ENERGY_INDEX | 2026-06-01 | None | 2026-07-21 | None | None
+CZ_HICP_FOOD_INDEX | 2026-06-01 | None | 2026-07-21 | None | None
+CZ_HICP_SERVICES_INDEX | 2026-06-01 | None | 2026-07-21 | None | None
 
 Note: NULL publish dates mean the ECB SDMX response did not expose a source date.

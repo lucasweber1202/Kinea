@@ -44,7 +44,23 @@ def parse_sdmx_csv(text: str, *, expected_external_id: str | None = None) -> Par
     messages: list[str] = []
     publish_dates: list[str] = []
 
-    for line_number, row in enumerate(reader, start=2):
+    line_number = 1
+    row_iter = iter(reader)
+    while True:
+        line_number += 1
+        try:
+            row = next(row_iter)
+        except StopIteration:
+            break
+        except csv.Error as exc:
+            # A corrupted/truncated line (e.g. an over-long merged field) can make the csv
+            # module itself raise while pulling the next row, before our per-row try/except
+            # below even runs. Warn and skip that one line instead of aborting the whole
+            # response -- the reader recovers cleanly and keeps yielding subsequent rows.
+            message = f"line {line_number}: skipped malformed record ({exc})"
+            messages.append(message)
+            warnings.warn(message, RuntimeWarning, stacklevel=2)
+            continue
         try:
             key = (row.get("KEY") or "").strip()
             if expected_external_id and key and key != expected_external_id:

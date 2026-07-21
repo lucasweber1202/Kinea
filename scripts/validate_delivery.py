@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 import tempfile
@@ -397,9 +398,11 @@ def _run_validation(evidence_dir: Path) -> Validator:
     )
     cli = (ROOT / "kinea" / "cli.py").read_text(encoding="utf-8")
     result.check(
-        "CLI exposes quality and revision analytics",
+        "CLI exposes quality, revision, and cross-series forecasting analytics",
         all(
-            f'sub.add_parser("{command}"' in cli
+            # A regex (not a plain substring) so this survives ruff wrapping a long
+            # add_parser(...) call onto multiple lines, which a fixed literal would not.
+            re.search(rf'add_parser\(\s*"{re.escape(command)}"', cli)
             for command in (
                 "quality",
                 "revisions",
@@ -409,6 +412,9 @@ def _run_validation(evidence_dir: Path) -> Validator:
                 "source-health",
                 "publication-lag",
                 "verify-archive",
+                "passthrough",
+                "diffusion",
+                "base-effects",
             )
         ),
     )

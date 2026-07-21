@@ -28,7 +28,7 @@ time pressure, the left column is enough to check every box in section 8's "defi
 | Coletor: capture, schema, vintages, idempotency, log | `kinea/collector.py`, `kinea/vintages.py`, `kinea/db.py` | Selective/ranged/dry-run collection, raw-payload archive, process lock — `kinea/archive.py`, `kinea/locking.py` |
 | `series_id` estruturado + `parse_series_id()` | `kinea/identifiers.py` | — |
 | SQL parametrizado, sem ORM | `kinea/db.py`, `kinea/vintages.py` | — |
-| Apresentação (formato livre) | `dashboard/app.py` | Point-in-time panels, feature matrices, revision analytics for backtesting — `kinea/panels.py`, `kinea/features.py`, `kinea/analytics.py` |
+| Apresentação (formato livre) | `dashboard/app.py` | Point-in-time panels, feature matrices, revision analytics, cross-series forecasting analytics — `kinea/panels.py`, `kinea/features.py`, `kinea/analytics.py`, `kinea/econometrics.py` |
 | Evidências (Seção 8) | `evidence/` (db, idempotency, revision, sample query, logs) | Semantic data-quality gate, source-contract tests, source-health/publication-lag reports |
 | README com comandos exatos | this file | `DELIVERY.md` (release-checklist framing of the same facts) |
 
@@ -71,6 +71,7 @@ ends with `DELIVERY STATUS: READY`.
 | Six-section dashboard | `dashboard/app.py`, `docs/dashboard-*.png` |
 | Snapshot diff/export and feature matrix | `kinea/analytics.py`, `kinea/exports.py`, `kinea/features.py` |
 | Lock, payload archive and source health | `kinea/locking.py`, `kinea/archive.py`, `kinea/health.py` |
+| FX pass-through, diffusion, base effects | `kinea/econometrics.py` |
 
 ## Data source and series
 
@@ -89,8 +90,8 @@ HICP is stored as the raw index level (2025 = 100), not an annual rate. EUR/CZK 
 raw number of Czech koruna per euro. `parse_series_id()` validates and decomposes the internal ID;
 metadata names and descriptions are derived from those tokens rather than manually assigned.
 
-The committed `evidence/kinea.db` was collected live on 19 July 2026. It contains 8,327 current
-observations: 7,051 daily EUR/CZK observations and 319 monthly observations for each HICP series.
+The committed `evidence/kinea.db` was collected live on 21 July 2026. It contains 8,328 current
+observations: 7,052 daily EUR/CZK observations and 319 monthly observations for each HICP series.
 The immediate live repeat added no metadata or time-series rows. Host status codes, coverage, and
 raw-response-to-database comparisons for all five series are recorded in
 `evidence/live_validation.txt`.
@@ -207,9 +208,14 @@ Regenerate the complete evidence from the live API and validate it:
 
 ```bash
 python scripts/generate_evidence.py --mode live
-python scripts/generate_dashboard_previews.py
 python scripts/validate_delivery.py
 ```
+
+`docs/dashboard-*.png` are genuine captures of the live Streamlit app and are refreshed by hand
+after a UI change — no committed script reproduces them, so none can silently replace them with a
+lower-fidelity approximation. `scripts/generate_dashboard_previews.py` is a separate, optional,
+matplotlib-only quick look at the same database (no Streamlit launch needed); it writes to
+`evidence/dashboard_preview/`, never to `docs/`.
 
 Offline evidence is written to an isolated directory and never replaces the committed live
 database:
@@ -306,7 +312,42 @@ Library:
 - `kinea.features` — `feature_panel`: mixed-frequency features calculated independently inside each
   knowledge snapshot, plus wide/long CSV/Parquet/Feather export.
 - `kinea.analytics.compare_as_of` — new/revised/removed observations between knowledge dates.
+- `kinea.analytics.revision_reliability` — per-series noise-to-signal ratio (mean revision size
+  relative to the series' own typical period-over-period move) and revision bias direction, so a
+  forecaster can judge how much to trust the newest print of a specific series.
 - `kinea.exports` — current or as-of snapshots in long or wide layout.
+
+### Cross-series forecasting analytics
+
+`kinea.econometrics` turns the five stored series into three views a Czech-CPI forecaster
+actually reasons with — still computed on demand, no fourth table:
+
+```bash
+python -m kinea.cli passthrough  --db evidence/kinea.db --series CZ_HICP_ENERGY_INDEX --max-lag 6
+python -m kinea.cli diffusion    --db evidence/kinea.db
+python -m kinea.cli base-effects --db evidence/kinea.db --series CZ_HICP_ENERGY_INDEX
+```
+
+- **`fx_passthrough`** — cross-correlates each HICP component's month-over-month change against
+  EUR/CZK's, at lags 0–N months, and reports the best lag plus a closed-form OLS elasticity
+  (percent component move per percent FX move). On the committed live data the correlations are
+  weak (|r| well under 0.15 at every lag for every component) — an honest result, not a bug: a
+  simple bivariate monthly correlation over 26 years is a coarse instrument for a channel that in
+  reality is confounded by everything else moving at the same time. Read it as an exploratory
+  signal, not a forecast.
+- **`diffusion_index`** — for each month, how many of the four HICP components *accelerated*
+  (not just rose) versus the prior month. Broad-based acceleration across components is a
+  materially different signal from one component (usually energy) swinging alone.
+  `dominant_component` names whichever moved most that month by magnitude — an equal-weighted
+  proxy, since this source does not publish official HICP component weights.
+- **`base_effect_decomposition`** — splits the month-to-month swing in a component's own
+  year-over-year figure into a **base effect** (the year-ago month's own move rolling out of the
+  12-month window — mechanical, not new) and **fresh momentum** (this month's own move — genuinely
+  new). Answers "is this month's inflation jump real, or just base effects?" directly from the
+  stored index levels.
+
+`kinea.cli revisions` also now prints a **reliability** section (noise-to-signal, bias direction)
+for every series, deepening the existing revision analytics rather than adding a parallel command.
 
 Dashboard: the HICP tab adds **month-over-month** and **3-month-annualized** views plus a
 **year-over-year inflation heatmap**; the Vintages tab shows revision **size, %, and observed
@@ -317,9 +358,9 @@ Operational CLI:
 ```bash
 python -m kinea.cli diff --db evidence/revision_demo.db \
   --from 2026-07-10 --to 2026-07-18
-python -m kinea.cli export --db evidence/kinea.db --as-of 2026-07-18 \
+python -m kinea.cli export --db evidence/kinea.db --as-of 2026-07-21 \
   --layout wide --output snapshot.csv
-python -m kinea.cli features --db evidence/kinea.db --as-of 2026-07-18 \
+python -m kinea.cli features --db evidence/kinea.db --as-of 2026-07-21 \
   --layout wide --output features.csv
 python -m kinea.cli source-health --db evidence/kinea.db --live
 python -m kinea.cli publication-lag --db evidence/kinea.db
@@ -365,9 +406,10 @@ kinea/panels.py                point-in-time CSV/Parquet/Feather exports
 kinea/features.py              vintage-safe mixed-frequency feature matrices
 kinea/exports.py               current/as-of long and wide exports
 kinea/health.py                operational coverage/source health
-kinea/quality.py               range, cadence, jump, future-date, and staleness checks
+kinea/quality.py               range, cadence, jump, future-date, staleness, flat-series checks
+kinea/econometrics.py          FX pass-through, diffusion index, base-effect decomposition
 kinea/collector.py             transactional collection and final logging
-kinea/cli.py                   collect, status, as-of, vintages, and panel commands
+kinea/cli.py                   collect, status, as-of, vintages, panel, and analytics commands
 dashboard/app.py               six-section Streamlit presentation
 fixtures/v1, fixtures/v2       deterministic synthetic collection fixtures
 fixtures/contracts/            recorded real ECB contract fixtures
@@ -393,18 +435,33 @@ tests/                         granular automated test suite
   atomic account of what happened.
 - `identifiers.py` validates `series_id` **structure** (upper-case tokens, country first) rather
   than a fixed enum of family/qualifier values, so extending `config/series.json` with a new
-  series never requires also editing the parser — `derive_name`/`derive_description` degrade
-  gracefully to a title-cased label for any token they don't have a nicer label for.
+  series never requires also editing the parser — `derive_name`/`derive_description` fall back to
+  the token verbatim (already upper-case) for anything without a curated label, rather than
+  `.title()`-casing it, which would otherwise mangle acronyms like GDP into "Gdp".
 - Live evidence is generated in a staging directory, validated, and only then atomically promoted;
   a failed refresh cannot destroy the last-known-good delivery.
 - Retroactive collection dates are rejected to avoid inventing historical knowledge.
 - The ECB can revise historical observations without announcing which points changed; therefore a
   bounded `--months` collection only detects revisions inside that window. Run a full collection
   when complete revision discovery matters.
-- Daily ECB responses can contain blank holiday/weekend records. The parser reports and skips those
-  invalid observations while retaining every valid published record.
+- Daily ECB responses can contain blank holiday/weekend records, and a corrupted or truncated line
+  can make the underlying `csv` module itself raise mid-response. The parser catches both at the
+  row level and skips only the bad line, retaining every valid record from the same response —
+  including any that were already parsed before the corrupted line, per assignment 5.1.
 - Value equality uses a tight `1e-12` relative/absolute tolerance so harmless binary serialization
   noise does not create a false revision while meaningful changes remain versioned.
+- `year_over_year`/`month_over_month`/`annualized` optionally take the aligned reference dates and
+  NaN out any comparison whose two endpoints are not exactly the expected number of calendar
+  months apart, so a missing month cannot silently relabel an 11- or 13-month span as an annual
+  rate. The dashboard always passes dates; `kinea.features` uses the same calendar-month guard
+  independently for the stored feature matrix.
+- The semantic quality gate also flags a run of identical consecutive values (3+ for monthly, 5+
+  for daily) as a non-blocking warning — every other check treats a "stuck" feed (source-side
+  caching bug, a silently repeating outage) as perfectly healthy, since it stays in range, creates
+  no gap, and never trips a large-jump check. The committed evidence genuinely triggers this on
+  `CZ_FX_EURCZK` during the ČNB's 2013–2017 EUR/CZK floor-defense regime, which really did hold the
+  rate flat for weeks at a time — a real low-volatility period, not a bug, but exactly the kind of
+  pattern this check exists to surface for a human to confirm either way.
 - Dashboard and development dependencies are pinned in both `pyproject.toml` and
   `requirements.txt`; GitHub Actions validates formatting, lint, tests, evidence, the dashboard
   contract, and property-based vintage invariants on Python 3.11 and 3.12. The weekly source check

@@ -80,8 +80,12 @@ class LiveClient:
         )
         last_error: Exception | None = None
         started = time.monotonic()
-        retry_after: float | None = None
         for attempt in range(1, self.attempts + 1):
+            # Reset every attempt: a Retry-After parsed from one failure must never leak into
+            # the delay computed for a differently-caused later failure (e.g. a 429 with
+            # Retry-After=5 followed by a plain network error, which has no Retry-After at all
+            # and should fall back to fresh exponential backoff, not reuse the stale 5s).
+            retry_after: float | None = None
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
                     raw_body = response.read()

@@ -203,7 +203,6 @@ def collect(
     Normal executions always write exactly one log row in ``finally``. A dry run produces no
     persistent side effects: database changes, execution logs and raw-payload archives are skipped.
     """
-    create_schema(conn)
     started = collected_at or datetime.now(timezone.utc).isoformat()
     vintage = vintage_date or started[:10]
     collection_id = run_id or uuid4().hex
@@ -217,6 +216,10 @@ def collect(
     traceback_text: str | None = None
 
     try:
+        # Schema creation lives inside the try so a transient failure here (lock contention,
+        # a permissions/disk-full error) still flows through the except/finally logic below and
+        # produces one status='error' log row, instead of escaping before any row is written.
+        create_schema(conn)
         # Network I/O and semantic validation happen without holding a SQLite write lock.
         for spec in config.series:
             result = client.fetch(spec, params=params)

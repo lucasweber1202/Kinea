@@ -24,7 +24,7 @@
       "unit": "index",
       "min_value": 20.0,
       "max_value": 300.0,
-      "max_change_pct": 45.0,
+      "max_change_pct": 15.0,
       "stale_after_days": 75
     },
     {
@@ -36,7 +36,7 @@
       "unit": "index",
       "min_value": 20.0,
       "max_value": 300.0,
-      "max_change_pct": 45.0,
+      "max_change_pct": 50.0,
       "stale_after_days": 75
     },
     {
@@ -48,7 +48,7 @@
       "unit": "index",
       "min_value": 20.0,
       "max_value": 300.0,
-      "max_change_pct": 45.0,
+      "max_change_pct": 15.0,
       "stale_after_days": 75
     },
     {
@@ -60,7 +60,7 @@
       "unit": "index",
       "min_value": 20.0,
       "max_value": 300.0,
-      "max_change_pct": 45.0,
+      "max_change_pct": 15.0,
       "stale_after_days": 75
     }
   ]

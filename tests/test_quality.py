@@ -25,6 +25,22 @@ def _monthly_spec() -> SeriesSpec:
     )
 
 
+def _daily_spec() -> SeriesSpec:
+    return SeriesSpec(
+        series_id="CZ_FX_EURCZK",
+        external_id="EXR.D.CZK.EUR.SP00.A",
+        dataflow="EXR",
+        sdmx_key="D.CZK.EUR.SP00.A",
+        frequency="daily",
+        unit="currency",
+        min_value=10.0,
+        max_value=50.0,
+        max_change_pct=15.0,
+        max_gap_days=10,
+        stale_after_days=7,
+    )
+
+
 def test_clean_monthly_series_passes_all_quality_checks():
     report = evaluate_observations(
         _monthly_spec(),
@@ -85,6 +101,43 @@ def test_semantic_quality_failure_rolls_back_and_is_logged():
     assert log["status"] == "error"
     assert "quality=error" in log["log_text"]
     assert "above_maximum" in log["traceback"]
+
+
+def test_flat_series_flags_a_stuck_or_cached_feed():
+    # Real case this guards against: evidence/kinea.db's CZ_FX_EURCZK has a genuine 39-day run
+    # of 27.021 (2017-02-03..2017-03-29, the CNB's EUR/CZK floor-defense regime), which every
+    # other check treats as perfectly healthy -- in range, no gap, 0% change never trips
+    # max_change_pct. This is that scenario in miniature: five identical daily fixings in a row.
+    report = evaluate_observations(
+        _daily_spec(),
+        [Observation(f"2026-06-{day:02d}", 25.5) for day in range(1, 6)],
+        as_of="2026-06-05",
+    )
+
+    assert {issue.code for issue in report.issues} == {"flat_series"}
+    flat = next(issue for issue in report.issues if issue.code == "flat_series")
+    assert flat.severity == "warning"
+    assert "5 consecutive observations" in flat.message
+    assert report.status == "warning"  # non-blocking by default, as the assignment requires
+
+
+def test_flat_series_ignores_short_runs_below_the_frequency_threshold():
+    # Daily threshold is 5; four identical days in a row is still ordinary noise-free data.
+    report = evaluate_observations(
+        _daily_spec(),
+        [Observation(f"2026-06-{day:02d}", 25.5) for day in range(1, 5)],
+        as_of="2026-06-04",
+    )
+    assert report.issues == ()
+
+
+def test_flat_series_uses_a_tighter_threshold_for_monthly_series():
+    report = evaluate_observations(
+        _monthly_spec(),
+        [Observation(m, 100.0) for m in ("2026-01-01", "2026-02-01", "2026-03-01")],
+        as_of="2026-07-19",
+    )
+    assert {issue.code for issue in report.issues} == {"flat_series", "stale_series"}
 
 
 def test_malformed_month_is_warned_and_does_not_abort_default_collection():

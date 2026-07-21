@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Generate reviewable PNG previews from the same database used by Streamlit."""
+"""Generate quick illustrative PNG previews from the same database used by Streamlit.
+
+These are a fast, dependency-light (matplotlib only) approximation of the dashboard's shape and
+numbers for a glance without launching Streamlit -- NOT a reproduction of the committed
+``docs/dashboard-*.png`` screenshots. Those are genuine captures of the live app (every control,
+tooltip and chart Streamlit itself renders) and are refreshed by hand after a UI change; this
+script writes to ``evidence/dashboard_preview/`` instead so it can never silently overwrite them
+with a lower-fidelity mockup, e.g. after the real dashboard gains a new control this script does
+not know how to draw.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 from kinea.db import AS_OF_QUERY, CURRENT_QUERY  # noqa: E402
 
 DB = ROOT / "evidence" / "kinea.db"
-DOCS = ROOT / "docs"
+DOCS = ROOT / "evidence" / "dashboard_preview"
 BLUE, NAVY, TEAL, ORANGE, RED = "#155EEF", "#102A43", "#0E9384", "#F79009", "#D92D20"
 PALETTE = [BLUE, TEAL, ORANGE, RED]
 
@@ -608,7 +617,7 @@ def audit_preview(metadata, current, logs):
 
 
 def main() -> None:
-    DOCS.mkdir(exist_ok=True)
+    DOCS.mkdir(parents=True, exist_ok=True)
     metadata, current, logs, demo_current, demo_history, old = _data()
     overview(metadata, current, logs, demo_current, demo_history)
     hicp_preview(metadata, current)
@@ -616,7 +625,11 @@ def main() -> None:
     vintages_preview(metadata, demo_history)
     as_of_preview(metadata, demo_current, demo_history, old)
     audit_preview(metadata, current, logs)
-    print("Generated six dashboard section previews in docs/")
+    print(
+        f"Generated six illustrative previews in {DOCS.relative_to(ROOT)}/ "
+        "(the committed docs/dashboard-*.png screenshots are separate, hand-captured, and "
+        "untouched by this script)"
+    )
 
 
 if __name__ == "__main__":

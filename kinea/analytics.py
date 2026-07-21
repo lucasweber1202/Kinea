@@ -33,11 +33,26 @@ class RevisionEvent:
 
 @dataclass(frozen=True)
 class SeriesRevisionSummary:
+    """Per-series revision statistics.
+
+    ``mean_abs_revision``/``max_abs_revision`` report magnitude only. ``mean_revision``,
+    ``n_upward`` and ``n_downward`` additionally expose the sign kept but discarded by
+    ``revision_events()``: near-zero ``mean_revision`` with a roughly even up/down split
+    suggests noise around a stable estimate, while a persistent sign is a systematic bias a
+    forecaster should adjust for (e.g. a source that always revises energy prices upward on the
+    second release). ``mean_pct_revision`` is the signed percent counterpart, comparable across
+    series with different index bases.
+    """
+
     series_id: str
     n_revised: int
     mean_abs_revision: float
     max_abs_revision: float
     mean_lag_days: float
+    mean_revision: float
+    n_upward: int
+    n_downward: int
+    mean_pct_revision: float | None
 
 
 @dataclass(frozen=True)
@@ -147,7 +162,9 @@ def revision_summary(
     summaries: list[SeriesRevisionSummary] = []
     for sid, events in sorted(grouped.items()):
         magnitudes = [event.abs_change for event in events]
+        signed = [event.change for event in events]
         lags = [event.lag_days for event in events]
+        pct_signed = [event.pct_change for event in events if event.pct_change is not None]
         summaries.append(
             SeriesRevisionSummary(
                 series_id=sid,
@@ -155,9 +172,104 @@ def revision_summary(
                 mean_abs_revision=fmean(magnitudes),
                 max_abs_revision=max(magnitudes),
                 mean_lag_days=fmean(lags),
+                mean_revision=fmean(signed),
+                n_upward=sum(1 for change in signed if change > 0),
+                n_downward=sum(1 for change in signed if change < 0),
+                mean_pct_revision=fmean(pct_signed) if pct_signed else None,
             )
         )
     return summaries
+
+
+@dataclass(frozen=True)
+class RevisionReliability:
+    """How much a forecaster should trust the newest print for one series.
+
+    ``noise_to_signal`` divides the series' mean absolute revision by the mean absolute
+    month-over-month (or day-over-day, for daily series) move of its own *current* values --
+    the same denominator kinea/quality.py's ``max_change_pct`` check implicitly compares
+    against. A ratio near 0 means revisions are small relative to how much the series normally
+    moves anyway (trust the latest print); a ratio approaching or exceeding 1 means a revision
+    is typically as large as a genuine month-to-month move, so the newest print should be
+    treated as provisional. ``None`` when there is not yet enough history to judge either side.
+    """
+
+    series_id: str
+    n_revised: int
+    n_observations: int
+    mean_abs_revision: float | None
+    mean_abs_period_change: float | None
+    noise_to_signal: float | None
+    bias_direction: str
+    """'upward', 'downward', or 'mixed' -- 'mixed' also covers the zero/one-revision case where
+    direction cannot yet be judged."""
+
+
+def revision_reliability(
+    conn: sqlite3.Connection, series_id: str | None = None
+) -> list[RevisionReliability]:
+    """Deepen revision_summary() with a trust signal a forecasting desk can act on directly.
+
+    Degrades gracefully rather than erroring when a series has too little history: with zero or
+    one revised observation, ``mean_abs_revision``/``noise_to_signal`` are ``None`` and
+    ``bias_direction`` is reported as ``'mixed'`` rather than asserting a bias that is not yet
+    statistically meaningful.
+    """
+    where = "WHERE series_id = ?" if series_id is not None else ""
+    params: tuple[str, ...] = (series_id,) if series_id is not None else ()
+    current_rows = conn.execute(
+        f"""
+        SELECT series_id, reference_date, value
+        FROM (
+            SELECT t.*, ROW_NUMBER() OVER (
+                PARTITION BY series_id, reference_date ORDER BY vintage_date DESC, collected_at DESC
+            ) AS rn
+            FROM time_series t
+            {where}
+        ) ranked
+        WHERE rn = 1
+        ORDER BY series_id, reference_date
+        """,
+        params,
+    ).fetchall()
+    current_by_series: dict[str, list[float]] = {}
+    for row in current_rows:
+        current_by_series.setdefault(row["series_id"], []).append(float(row["value"]))
+
+    revisions_by_series: dict[str, list[RevisionEvent]] = {}
+    for event in revision_events(conn, series_id):
+        revisions_by_series.setdefault(event.series_id, []).append(event)
+
+    results: list[RevisionReliability] = []
+    for sid in sorted(current_by_series):
+        values = current_by_series[sid]
+        events = revisions_by_series.get(sid, [])
+        period_changes = [abs(b - a) for a, b in zip(values, values[1:], strict=False)]
+        mean_abs_period_change = fmean(period_changes) if period_changes else None
+        mean_abs_revision = fmean([e.abs_change for e in events]) if events else None
+        noise_to_signal = (
+            mean_abs_revision / mean_abs_period_change
+            if mean_abs_revision is not None and mean_abs_period_change
+            else None
+        )
+        up = sum(1 for e in events if e.change > 0)
+        down = sum(1 for e in events if e.change < 0)
+        if len(events) >= 2 and up != down:
+            bias_direction = "upward" if up > down else "downward"
+        else:
+            bias_direction = "mixed"
+        results.append(
+            RevisionReliability(
+                series_id=sid,
+                n_revised=len(events),
+                n_observations=len(values),
+                mean_abs_revision=mean_abs_revision,
+                mean_abs_period_change=mean_abs_period_change,
+                noise_to_signal=noise_to_signal,
+                bias_direction=bias_direction,
+            )
+        )
+    return results
 
 
 def compare_as_of(

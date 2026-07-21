@@ -24,7 +24,7 @@ network-independent.
 - Source: public, keyless ECB SDMX API.
 - Scope: four Czech HICP component indices plus the daily EUR/CZK reference rate.
 - Database: SQLite with exactly `metadata`, `time_series`, and `logs`.
-- Live evidence: 5 series and 8,327 current observations, with all five latest samples matched
+- Live evidence: 5 series and 8,328 current observations, with all five latest samples matched
   against raw ECB responses.
 - Vintage behavior: first observation, unchanged re-run, later revision, and same-day correction.
 - Modeling interface: CSV/Parquet/Feather point-in-time panels with explicit knowledge dates and
@@ -41,7 +41,10 @@ network-independent.
   mixed-frequency EUR/CZK aggregation.
 - Presentation: six Streamlit sections, seven CSV exports, source coverage, vintages, as-of view,
   and execution audit.
-- Automated quality gate: 115 tests (85%+ branch coverage, enforced), Ruff formatting/lint, mypy,
+- Cross-series forecasting analytics: FX pass-through by lag, HICP-component diffusion/momentum
+  breadth, and base-effect-vs-fresh-momentum decomposition of YoY swings — `kinea/econometrics.py`,
+  exposed via `kinea.cli passthrough/diffusion/base-effects`.
+- Automated quality gate: 141 tests (86%+ branch coverage, enforced), Ruff formatting/lint, mypy,
   Python 3.11/3.12 CI matrix, and a fail-closed delivery validator.
 
 ## Evidence map
@@ -109,5 +112,6 @@ changes official values in `evidence/kinea.db`.
 - [x] Selective/ranged/dry-run collection and raw payload archive
 - [x] Short transaction, batched ingest, execution lock and Retry-After handling
 - [x] Source-health and publication-lag reporting
+- [x] Cross-series forecasting analytics: FX pass-through, diffusion index, base-effect decomposition
 - [x] Automated tests, coverage floor, type checking, and fail-closed delivery validator
 - [x] Reproducible ZIP, directly clonable Git bundle, checksums, and coherent `2.2.0` version

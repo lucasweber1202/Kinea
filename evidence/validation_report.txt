@@ -32,7 +32,7 @@
 [PASS] Dashboard reads the mandatory schema
 [PASS] Dashboard exposes all six required sections
 [PASS] Dashboard semantics and exports are review-ready
-[PASS] CLI exposes quality and revision analytics
+[PASS] CLI exposes quality, revision, and cross-series forecasting analytics
 [PASS] Live ECB validation passed
 [PASS] Structured live proof is fail-closed
 [PASS] Operational health and publication-lag reports exist

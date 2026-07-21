@@ -17,6 +17,7 @@ venv/
 !evidence/kinea.db
 !evidence/revision_demo.db
 evidence/offline/
+evidence/dashboard_preview/
 .evidence-staging-*/
 .evidence-backup-*/
 

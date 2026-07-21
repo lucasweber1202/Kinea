@@ -62,7 +62,13 @@ def parse_series_id(series_id: str) -> SeriesIdParts:
 
 
 def _label(token: str) -> str:
-    return TOKEN_LABELS.get(token, token.title())
+    # series_id tokens are already validated as a single all-upper-case alphanumeric run (no
+    # internal spaces), so .title() has nothing useful to split on -- it only ever lower-cases
+    # everything after the first letter, which corrupts acronym-style tokens that are the norm
+    # in this domain (GDP -> "Gdp", CPI -> "Cpi", PPI -> "Ppi"). Fall back to the token verbatim
+    # (already upper-case) instead, so a future acronym-heavy series renders correctly by
+    # default rather than only the ones someone remembered to add to TOKEN_LABELS.
+    return TOKEN_LABELS.get(token, token)
 
 
 def derive_name(series_id: str) -> str:

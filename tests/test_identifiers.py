@@ -54,13 +54,23 @@ def test_unrecognized_family_and_qualifier_still_parse():
 
     Family/qualifier vocabulary is intentionally open (see module docstring): a well-formed but
     previously unseen id — like the assignment's own ``CZ_PPI_INDEX`` example — parses instead of
-    raising, and gets a graceful title-cased label rather than a hand-written name.
+    raising, and gets a graceful label rather than a hand-written name.
     """
     parts = parse_series_id("CZ_PPI_INDEX")
     assert parts.family == "PPI"
     assert parts.qualifiers == ("INDEX",)
-    assert derive_name("CZ_PPI_INDEX") == "Czechia - Ppi Index"
+    assert derive_name("CZ_PPI_INDEX") == "Czechia - PPI Index"
     assert "CZ_PPI_INDEX" in derive_description("CZ_PPI_INDEX")
+
+
+def test_unrecognized_token_fallback_preserves_acronyms():
+    """The graceful fallback must not mangle acronym-style tokens via str.title().
+
+    Every series_id token is already validated as a single upper-case alphanumeric run, so
+    .title() has nothing to usefully split on -- it only lower-cases everything after the first
+    letter (GDP -> "Gdp"). The fallback must keep unrecognized tokens verbatim instead.
+    """
+    assert derive_name("CZ_GDP_SA") == "Czechia - GDP SA"
 
 
 def test_name_is_derived_from_tokens():

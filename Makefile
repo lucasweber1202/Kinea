@@ -28,7 +28,7 @@ panel-demo:
 
 feature-demo:
 	$(PYTHON) -m kinea.cli features --db evidence/kinea.db \
-		--as-of 2026-07-18 --format csv --output /tmp/kinea-features.csv
+		--as-of 2026-07-21 --format csv --output /tmp/kinea-features.csv
 
 diff-demo:
 	$(PYTHON) -m kinea.cli diff --db evidence/revision_demo.db \
@@ -38,10 +38,10 @@ dry-run:
 	$(PYTHON) -m kinea.cli collect --mode live --db evidence/kinea.db --months 3 --dry-run
 
 quality:
-	$(PYTHON) -m kinea.cli quality --db evidence/kinea.db --as-of 2026-07-19
+	$(PYTHON) -m kinea.cli quality --db evidence/kinea.db --as-of 2026-07-21
 
 source-health:
-	$(PYTHON) -m kinea.cli source-health --db evidence/kinea.db --as-of 2026-07-19
+	$(PYTHON) -m kinea.cli source-health --db evidence/kinea.db --as-of 2026-07-21
 
 revisions-demo:
 	$(PYTHON) -m kinea.cli revisions --db evidence/revision_demo.db

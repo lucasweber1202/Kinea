@@ -9,6 +9,7 @@ from typing import Iterable
 
 from .config import Config, SeriesSpec
 from .models import Observation
+from .vintages import values_equal
 
 
 class DataQualityError(ValueError):
@@ -124,6 +125,32 @@ def evaluate_observations(
                         severity="warning",
                     )
                 )
+
+    # A "stuck" feed (source-side caching bug, an outage silently repeating the last value) is
+    # invisible to every check above: it stays in range, creates no cadence gap, and produces a
+    # 0% change that never trips max_change_pct. Flag a run of N consecutive identical values as
+    # a (non-blocking) warning so a forecasting desk can confirm a genuine low-volatility regime
+    # rather than silently trust a feed that could just as easily be stale.
+    repeat_threshold = 3 if spec.frequency == "monthly" else 5
+    run_start = 0
+    for index in range(1, len(ordered) + 1):
+        still_running = index < len(ordered) and values_equal(
+            ordered[index].value, ordered[run_start].value
+        )
+        if not still_running:
+            run_length = index - run_start
+            if run_length >= repeat_threshold:
+                issues.append(
+                    QualityIssue(
+                        "flat_series",
+                        f"{run_length} consecutive observations equal to "
+                        f"{ordered[run_start].value} from {ordered[run_start].reference_date} "
+                        f"to {ordered[index - 1].reference_date} — could be a genuine "
+                        "low-volatility period or a stuck/cached upstream feed",
+                        severity="warning",
+                    )
+                )
+            run_start = index
 
     last_date = date.fromisoformat(ordered[-1].reference_date)
     if spec.stale_after_days is not None:

@@ -13,10 +13,10 @@
       "external_id": "EXR.D.CZK.EUR.SP00.A",
       "http_status": 200,
       "match": true,
-      "raw_value": 24.205,
-      "reference_date": "2026-07-17",
+      "raw_value": 24.19,
+      "reference_date": "2026-07-20",
       "series_id": "CZ_FX_EURCZK",
-      "stored_value": 24.205
+      "stored_value": 24.19
     },
     {
       "external_id": "HICP.M.CZ.N.XEF000.4D0.INX",

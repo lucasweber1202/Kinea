@@ -133,26 +133,38 @@ def kpi(col, label: str, value: str, sub: str = "", accent: str = "#155EEF") -> 
 
 
 def _apply_transform(frame: pd.DataFrame, func) -> pd.DataFrame:
-    """Apply a per-series transform from kinea.transforms and drop uncomputable rows."""
+    """Apply a per-series transform from kinea.transforms and drop uncomputable rows.
+
+    ``func`` receives the group's value Series and its aligned reference-date Series, so
+    calendar-gap-aware transforms (year_over_year/month_over_month/annualized) can tell a real
+    12-month span from a coincidentally-12-rows-back value when a month is missing.
+    """
     out = frame.sort_values("reference_date").copy()
-    out["value"] = out.groupby("series_id")["value"].transform(func)
+    parts = []
+    for _, group in out.groupby("series_id", sort=False):
+        group = group.copy()
+        group["value"] = func(group["value"], group["reference_date"]).to_numpy()
+        parts.append(group)
+    out = pd.concat(parts) if parts else out
     return out.dropna(subset=["value"])
 
 
 def add_yoy(frame: pd.DataFrame, periods: int = 12) -> pd.DataFrame:
-    return _apply_transform(frame, lambda s: transforms.year_over_year(s, periods))
+    return _apply_transform(
+        frame, lambda s, d: transforms.year_over_year(s, periods, reference_dates=d)
+    )
 
 
 def add_mom(frame: pd.DataFrame) -> pd.DataFrame:
-    return _apply_transform(frame, transforms.month_over_month)
+    return _apply_transform(frame, lambda s, d: transforms.month_over_month(s, reference_dates=d))
 
 
 def add_annualized(frame: pd.DataFrame, window: int = 3) -> pd.DataFrame:
-    return _apply_transform(frame, lambda s: transforms.annualized(s, window))
+    return _apply_transform(frame, lambda s, d: transforms.annualized(s, window, reference_dates=d))
 
 
 def rebase100(frame: pd.DataFrame) -> pd.DataFrame:
-    return _apply_transform(frame, transforms.rebase)
+    return _apply_transform(frame, lambda s, _d: transforms.rebase(s))
 
 
 def line_chart(
@@ -318,10 +330,18 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     if latest_reference is not None:
-        st.markdown(
-            f'<span class="pill">Data through {latest_reference.date()}</span>',
-            unsafe_allow_html=True,
-        )
+        # Pooling all series into one "data through" date silently claims the daily FX date for
+        # the monthly HICP components too (they can lag it by six weeks or more). Report each
+        # native frequency's own latest date instead of one number that overstates HICP freshness.
+        daily_last = metadata.loc[metadata["frequency"] == "daily", "last_observation"].max()
+        monthly_last = metadata.loc[metadata["frequency"] == "monthly", "last_observation"].max()
+        pill_parts = []
+        if pd.notna(daily_last):
+            pill_parts.append(f"FX through {daily_last}")
+        if pd.notna(monthly_last):
+            pill_parts.append(f"HICP through {monthly_last}")
+        pill_text = " · ".join(pill_parts) or f"Data through {latest_reference.date()}"
+        st.markdown(f'<span class="pill">{pill_text}</span>', unsafe_allow_html=True)
     st.caption(
         "New to this dataset? Start with **Overview** for the headline series, then "
         "**Vintages** to see a revision kept as two coexisting rows instead of overwritten."
@@ -539,7 +559,11 @@ def main() -> None:
                         x=alt.X(
                             "yearmonth(reference_date):T",
                             title=None,
-                            axis=alt.Axis(format="%Y", grid=False),
+                            axis=alt.Axis(
+                                format="%Y",
+                                grid=False,
+                                tickCount={"interval": "year", "step": 1},
+                            ),
                         ),
                         y=alt.Y(
                             "Component:N",
@@ -783,6 +807,19 @@ def main() -> None:
             overlay["Snapshot"] = overlay["series_id"].map(
                 {"_asof": f"as-of {as_of}", "_current": "current"}
             )
+            if not changed.empty:
+                # Overlaying the FULL multi-decade history makes a single revised point
+                # invisible -- the two lines are indistinguishable except right where they
+                # actually differ. Zoom to a window around the changed observation(s) so the
+                # revision this tab exists to show is actually visible, not just claimed by the
+                # pill above.
+                pad = pd.DateOffset(years=2)
+                window_lo = changed["reference_date"].min() - pad
+                window_hi = changed["reference_date"].max() + pad
+                overlay = overlay[
+                    overlay["reference_date"].between(window_lo, window_hi, inclusive="both")
+                ]
+                st.caption(f"Chart zoomed to ±2 years around the {n} changed observation(s).")
             lines = (
                 alt.Chart(overlay)
                 .mark_line(strokeWidth=2, interpolate="monotone")

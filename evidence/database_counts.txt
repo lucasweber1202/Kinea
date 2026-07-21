@@ -1,13 +1,13 @@
 DATABASE COUNTS
 ===============
 metadata: 5
-time_series: 8327
+time_series: 8328
 logs: 3
 
 SERIES COVERAGE
 series_id | observation_count | first_observation | last_observation
 --- | --- | --- | ---
-CZ_FX_EURCZK | 7051 | 1999-01-04 | 2026-07-17
+CZ_FX_EURCZK | 7052 | 1999-01-04 | 2026-07-20
 CZ_HICP_CORE_INDEX | 319 | 1999-12-01 | 2026-06-01
 CZ_HICP_ENERGY_INDEX | 319 | 1999-12-01 | 2026-06-01
 CZ_HICP_FOOD_INDEX | 319 | 1999-12-01 | 2026-06-01

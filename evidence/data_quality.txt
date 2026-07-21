@@ -1,9 +1,14 @@
 DATA QUALITY REPORT
 ===================
-As of: 2026-07-19
+As of: 2026-07-21
 Status: PASS
 
-CZ_FX_EURCZK: PASS | observations=7051 | first=1999-01-04 | last=2026-07-17
+CZ_FX_EURCZK: WARNING | observations=7052 | first=1999-01-04 | last=2026-07-20
+  - WARNING flat_series: 5 consecutive observations equal to 27.021 from 2016-01-11 to 2016-01-15 — could be a genuine low-volatility period or a stuck/cached upstream feed
+  - WARNING flat_series: 7 consecutive observations equal to 27.021 from 2016-10-18 to 2016-10-26 — could be a genuine low-volatility period or a stuck/cached upstream feed
+  - WARNING flat_series: 6 consecutive observations equal to 27.021 from 2016-12-15 to 2016-12-22 — could be a genuine low-volatility period or a stuck/cached upstream feed
+  - WARNING flat_series: 13 consecutive observations equal to 27.021 from 2017-01-04 to 2017-01-20 — could be a genuine low-volatility period or a stuck/cached upstream feed
+  - WARNING flat_series: 39 consecutive observations equal to 27.021 from 2017-02-03 to 2017-03-29 — could be a genuine low-volatility period or a stuck/cached upstream feed
 CZ_HICP_CORE_INDEX: PASS | observations=319 | first=1999-12-01 | last=2026-06-01
 CZ_HICP_ENERGY_INDEX: PASS | observations=319 | first=1999-12-01 | last=2026-06-01
 CZ_HICP_FOOD_INDEX: PASS | observations=319 | first=1999-12-01 | last=2026-06-01

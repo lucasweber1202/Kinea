@@ -64,6 +64,101 @@ def test_revisions_cli_filters_events_and_summary(tmp_path, capsys):
     assert "CZ_HICP_CORE_INDEX" not in output
 
 
+def test_revisions_cli_reports_reliability_section(tmp_path, capsys):
+    database = tmp_path / "revisions.db"
+    conn = connect(database)
+    _add_revision(conn, "CZ_HICP_CORE_INDEX")
+    conn.commit()
+    conn.close()
+
+    assert main(["revisions", "--db", str(database)]) == 0
+    output = capsys.readouterr().out
+    assert "reliability (trust in the latest print" in output
+    assert "CZ_HICP_CORE_INDEX: revised=1/1" in output
+
+
+def _seed_monthly_pair(conn) -> None:
+    """A minimal FX + one HICP component pair so passthrough/diffusion/base-effects have
+    something non-trivial to compute over."""
+    for series_id, frequency in (("CZ_FX_EURCZK", "daily"), ("CZ_HICP_ENERGY_INDEX", "monthly")):
+        conn.execute(
+            """
+            INSERT INTO metadata (series_id, name, description, country, frequency, unit,
+                                  observation_count, source_url, collected_at)
+            VALUES (?, 'n', 'd', 'CZ', ?, 'index', 0, 'https://x', '2026-07-01T10:00:00+00:00')
+            """,
+            (series_id, frequency),
+        )
+    fx_obs = [Observation(f"2025-{m:02d}-15", 25.0 + m * 0.1) for m in range(1, 9)]
+    hicp_obs = [Observation(f"2025-{m:02d}-01", 100.0 + m * 0.5) for m in range(1, 9)]
+    ingest_observations(
+        conn,
+        "CZ_FX_EURCZK",
+        fx_obs,
+        vintage_date="2026-07-19",
+        collected_at="2026-07-19T10:00:00+00:00",
+    )
+    ingest_observations(
+        conn,
+        "CZ_HICP_ENERGY_INDEX",
+        hicp_obs,
+        vintage_date="2026-07-19",
+        collected_at="2026-07-19T10:00:00+00:00",
+    )
+
+
+def test_passthrough_cli_reports_best_lag(tmp_path, capsys):
+    database = tmp_path / "passthrough.db"
+    conn = connect(database)
+    _seed_monthly_pair(conn)
+    conn.commit()
+    conn.close()
+
+    assert (
+        main(
+            [
+                "passthrough",
+                "--db",
+                str(database),
+                "--series",
+                "CZ_HICP_ENERGY_INDEX",
+                "--max-lag",
+                "2",
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "CZ_HICP_ENERGY_INDEX vs CZ_FX_EURCZK" in output
+    assert "best lag:" in output
+    assert "lag_months | correlation | n_pairs" in output
+
+
+def test_diffusion_cli_lists_monthly_readings(tmp_path, capsys):
+    database = tmp_path / "diffusion.db"
+    conn = connect(database)
+    _seed_monthly_pair(conn)
+    conn.commit()
+    conn.close()
+
+    assert main(["diffusion", "--db", str(database), "--series", "CZ_HICP_ENERGY_INDEX"]) == 0
+    output = capsys.readouterr().out
+    assert "reference_date | accel | decel | flat | diffusion | dominant_component" in output
+    assert "2025-03-01" in output  # first month with a comparable prior MoM
+
+
+def test_base_effects_cli_reports_insufficient_history(tmp_path, capsys):
+    database = tmp_path / "base_effects.db"
+    conn = connect(database)
+    _seed_monthly_pair(conn)  # only 8 months -- fewer than the 13 a YoY figure needs
+    conn.commit()
+    conn.close()
+
+    assert main(["base-effects", "--db", str(database), "--series", "CZ_HICP_ENERGY_INDEX"]) == 0
+    output = capsys.readouterr().out
+    assert "Not enough history" in output
+
+
 def test_quality_cli_returns_success_for_clean_database(tmp_path, capsys):
     database = tmp_path / "quality.db"
     conn = connect(database)
