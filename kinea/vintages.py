@@ -54,17 +54,12 @@ def ingest_observations(
         """,
         (series_id,),
     ).fetchall()
-    latest_series_vintage = (
-        None if not latest_rows else latest_rows[0]["max_series_vintage"]
-    )
+    latest_series_vintage = None if not latest_rows else latest_rows[0]["max_series_vintage"]
     if latest_series_vintage is not None and vintage_date < latest_series_vintage:
-        raise ValueError(
-            "non-monotonic vintage_date: historical knowledge cannot be backfilled"
-        )
+        raise ValueError("non-monotonic vintage_date: historical knowledge cannot be backfilled")
 
     latest_by_reference = {
-        row["reference_date"]: (float(row["value"]), row["vintage_date"])
-        for row in latest_rows
+        row["reference_date"]: (float(row["value"]), row["vintage_date"]) for row in latest_rows
     }
     same_day = {
         reference: value

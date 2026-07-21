@@ -30,9 +30,7 @@ from .vintages import ingest_observations
 class Client(Protocol):
     mode: str
 
-    def fetch(
-        self, spec: SeriesSpec, params: dict[str, str] | None = None
-    ) -> FetchResult: ...
+    def fetch(self, spec: SeriesSpec, params: dict[str, str] | None = None) -> FetchResult: ...
 
 
 @dataclass(frozen=True)
@@ -177,9 +175,7 @@ def _log_summary(
     prepared: list[PreparedSeries],
     dry_run: bool,
 ) -> str:
-    metrics = json.dumps(
-        [_series_metric(item) for item in prepared], separators=(",", ":")
-    )
+    metrics = json.dumps([_series_metric(item) for item in prepared], separators=(",", ":"))
     return (
         f"run_id={run_id}; mode={mode}; dry_run={str(dry_run).lower()}; series={series}; "
         f"seen={counts.seen}; inserted={counts.inserted}; revised={counts.revised}; "
@@ -227,9 +223,7 @@ def collect(
             if archive_dir is not None and not dry_run:
                 archive_response(archive_dir, spec, result, run_id=collection_id)
             parsed = parse_sdmx_csv(result.body, expected_external_id=spec.external_id)
-            warning_messages.extend(
-                f"{spec.series_id}: {message}" for message in parsed.warnings
-            )
+            warning_messages.extend(f"{spec.series_id}: {message}" for message in parsed.warnings)
             previous_row = (
                 None
                 if not parsed.observations
@@ -252,12 +246,8 @@ def collect(
                 if issue not in blocked
             )
             if blocked:
-                details = "; ".join(
-                    f"{issue.code}: {issue.message}" for issue in blocked
-                )
-                raise DataQualityError(
-                    f"{spec.series_id}: semantic quality gate failed: {details}"
-                )
+                details = "; ".join(f"{issue.code}: {issue.message}" for issue in blocked)
+                raise DataQualityError(f"{spec.series_id}: semantic quality gate failed: {details}")
             prepared_series.append(PreparedSeries(spec, result, parsed, quality))
 
         # Keep the write lock only for the set-based ingest and metadata refresh.
@@ -266,9 +256,7 @@ def collect(
             spec = prepared.spec
             result = prepared.result
             parsed = prepared.parsed
-            _ensure_metadata(
-                conn, spec, result.source_url, started, parsed.last_publish_date
-            )
+            _ensure_metadata(conn, spec, result.source_url, started, parsed.last_publish_date)
             series_counts = ingest_observations(
                 conn,
                 spec.series_id,

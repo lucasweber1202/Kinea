@@ -26,15 +26,11 @@ class FeatureRecipe:
 
     def __post_init__(self) -> None:
         if self.transform not in {"level", "pct_change", "difference"}:
-            raise ValueError(
-                "feature transform must be level, pct_change, or difference"
-            )
+            raise ValueError("feature transform must be level, pct_change, or difference")
         if self.aggregation not in {"latest", "mean_month"}:
             raise ValueError("feature aggregation must be latest or mean_month")
         if self.period_unit not in {"observations", "calendar_months"}:
-            raise ValueError(
-                "feature period unit must be observations or calendar_months"
-            )
+            raise ValueError("feature period unit must be observations or calendar_months")
         if self.periods < 1:
             raise ValueError("feature periods must be positive")
 
@@ -110,14 +106,10 @@ def _comparison_point(
             return None
         return points[-1 - recipe.periods]
     target_reference = _shift_months(points[-1][0], -recipe.periods)
-    return next(
-        (point for point in reversed(points) if point[0] == target_reference), None
-    )
+    return next((point for point in reversed(points) if point[0] == target_reference), None)
 
 
-def _calculate(
-    points: list[tuple[str, float, str]], recipe: FeatureRecipe
-) -> FeatureValue | None:
+def _calculate(points: list[tuple[str, float, str]], recipe: FeatureRecipe) -> FeatureValue | None:
     if not points:
         return None
     reference, latest, vintage = points[-1]
@@ -187,9 +179,9 @@ def write_feature_panel(
         columns = ["knowledge_date", *feature_names]
         indexed: dict[str, dict[str, object]] = {}
         for row in rows:
-            indexed.setdefault(
-                row.knowledge_date, {"knowledge_date": row.knowledge_date}
-            )[row.feature] = row.value
+            indexed.setdefault(row.knowledge_date, {"knowledge_date": row.knowledge_date})[
+                row.feature
+            ] = row.value
         records = [indexed[key] for key in sorted(indexed)]
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)
