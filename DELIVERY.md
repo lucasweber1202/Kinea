@@ -1,23 +1,46 @@
 # Delivery handoff
 
 This repository is the review-ready submission for the Kinea internship data-collector
-assignment. Release tag `v2.2.0` inside the directly clonable Git bundle identifies the delivered
-source tree; `SHA256SUMS` verifies both downloadable artifacts. GitHub `main` contains the same
-source tree.
-The installable Python package uses the same `2.2.0` version, avoiding separate release/package
-numbering.
+assignment. Release tag `v2.3.0` identifies the delivered source tree: GitHub `main`, the
+annotated tag `v2.3.0`, the downloadable `kinea-collector-2.3.0.zip`, and the directly clonable
+`kinea-collector-2.3.0.bundle` all resolve to the same commit and the same tree. `SHA256SUMS`
+verifies both downloadable artifacts. The installable Python package uses the same `2.3.0`
+version, avoiding separate release/package numbering.
+
+The earlier tag `v2.2.0` is preserved unchanged as a historical marker for the previous tree; it
+is not the delivered version.
+
+## Delivery identity
+
+| Field | Value |
+|---|---|
+| Version | `2.3.0` |
+| Tag | annotated `v2.3.0` (points at the delivered `main` commit) |
+| Tests | 142 passed |
+| Coverage | 86.61% (enforced floor 80%) |
+| Ruff / mypy | format + lint clean, no type issues |
+| Validator | `DELIVERY STATUS: READY` |
+| Live evidence | 5 series, 8,328 current observations |
+
+The exact final commit SHA and the SHA-256 checksums of both downloadable artifacts are recorded
+in `SHA256SUMS`, which is generated from the tag after the delivered commit is fixed (a commit
+cannot embed its own hash). Verify the delivery with the exact commands in the next section.
 
 ## Five-minute review
 
 ```bash
 python -m pip install -e ".[dev,dashboard,modeling]"
+python -m ruff format --check .
+python -m ruff check .
+python -m mypy
 python -m pytest -q
 python scripts/validate_delivery.py
 python -m streamlit run dashboard/app.py
 ```
 
-Expected validator result: `DELIVERY STATUS: READY`. The committed database makes these checks
-network-independent.
+The first six commands are exactly what CI runs and what `make verify` wraps. Expected results:
+142 tests pass at 86.61% coverage, Ruff and mypy are clean, and the validator ends with
+`DELIVERY STATUS: READY`. The committed database makes these checks network-independent.
 
 ## Delivered result
 
@@ -44,7 +67,7 @@ network-independent.
 - Cross-series forecasting analytics: FX pass-through by lag, HICP-component diffusion/momentum
   breadth, and base-effect-vs-fresh-momentum decomposition of YoY swings — `kinea/econometrics.py`,
   exposed via `kinea.cli passthrough/diffusion/base-effects`.
-- Automated quality gate: 141 tests (86%+ branch coverage, enforced), Ruff formatting/lint, mypy,
+- Automated quality gate: 142 tests (86.61% coverage, 80% floor enforced), Ruff formatting/lint, mypy,
   Python 3.11/3.12 CI matrix, and a fail-closed delivery validator.
 
 ## Evidence map
@@ -114,4 +137,4 @@ changes official values in `evidence/kinea.db`.
 - [x] Source-health and publication-lag reporting
 - [x] Cross-series forecasting analytics: FX pass-through, diffusion index, base-effect decomposition
 - [x] Automated tests, coverage floor, type checking, and fail-closed delivery validator
-- [x] Reproducible ZIP, directly clonable Git bundle, checksums, and coherent `2.2.0` version
+- [x] Reproducible ZIP, directly clonable Git bundle, checksums, and coherent `2.3.0` version
